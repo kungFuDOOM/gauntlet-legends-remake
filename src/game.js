@@ -61,7 +61,7 @@ export class Game {
     this.enemies = []; this.gens = []; this.projs = []; this.items = []; this.particles = []; this.texts = [];
     this.flash = 0; this.shake = 0; this.exitReached = false; this.boss = null;
     this.flowT = 0; this.exploreT = 0; this.time = 0;
-    this.banner = { text: L.info.isBoss ? L.info.boss.name : `${L.info.theme.name} — Stage ${L.info.stage}`, t: 3 };
+    this.banner = { text: L.info.stageName, sub: L.info.theme.name, t: 3.5 };
 
     const c = (tx) => tx * TILE + TILE / 2;
     for (const it of L.items) this.items.push({ type: it.type, sub: it.sub, x: c(it.x), y: c(it.y), r: 10, bob: Math.random() * 6 });

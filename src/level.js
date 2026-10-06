@@ -3,17 +3,29 @@
 export const T = { WALL: 0, FLOOR: 1, DOOR: 2, EXIT: 3, SEALED: 4 };
 
 export const THEMES = [
-  { name: 'Mountain Kingdom',  floorA: '#4a4438', floorB: '#544c3f', wallTop: '#8f846d', wallSide: '#5c5444', dark: 0.35, accent: '#d9c27a', void: '#14110c' },
-  { name: 'Castle Stronghold', floorA: '#3b3e4a', floorB: '#444857', wallTop: '#80869b', wallSide: '#4e5263', dark: 0.45, accent: '#9fb0d9', void: '#0e0f14' },
-  { name: 'Sky Dominion',      floorA: '#3f5361', floorB: '#4a5f6e', wallTop: '#b0cad9', wallSide: '#6a8698', dark: 0.18, accent: '#e0f0ff', void: '#1a2836' },
-  { name: 'Underworld',        floorA: '#3a2222', floorB: '#452827', wallTop: '#8f3c2a', wallSide: '#5a2418', dark: 0.55, accent: '#ff7a3a', void: '#120606' },
+  {
+    name: 'Mountain Kingdom', stages: ['Valley of Fire', 'Dagger Peak', 'Cliffs of Desolation'],
+    floorA: '#4a4438', floorB: '#544c3f', wallTop: '#8f846d', wallSide: '#5c5444', dark: 0.35, accent: '#d9c27a', void: '#14110c',
+  },
+  {
+    name: 'Castle Stronghold', stages: ['Castle Courtyard', 'Dungeon of Torment', 'Tower Armory'],
+    floorA: '#3b3e4a', floorB: '#444857', wallTop: '#80869b', wallSide: '#4e5263', dark: 0.45, accent: '#9fb0d9', void: '#0e0f14',
+  },
+  {
+    name: 'Sky Dominion', stages: ['Poisonous Fields', 'Haunted Cemetery', 'Venomous Spire'],
+    floorA: '#3f5361', floorB: '#4a5f6e', wallTop: '#b0cad9', wallSide: '#6a8698', dark: 0.18, accent: '#e0f0ff', void: '#1a2836',
+  },
+  {
+    name: 'Underworld', stages: ['Gates of the Underworld', 'Lava Pits', 'Hall of Souls'],
+    floorA: '#3a2222', floorB: '#452827', wallTop: '#8f3c2a', wallSide: '#5a2418', dark: 0.55, accent: '#ff7a3a', void: '#120606',
+  },
 ];
 
 export const BOSSES = [
-  { name: 'The Ogre Chieftain', color: '#6a8a3a', horn: '#d9d0b0', hp: 520, speed: 70 },
-  { name: 'The Gargoyle Lord',  color: '#7a7a8c', horn: '#3a3a44', hp: 700, speed: 80 },
-  { name: 'The Storm Dragon',   color: '#3f86c9', horn: '#e0f0ff', hp: 880, speed: 88 },
-  { name: 'The Lich King',      color: '#9a3ad0', horn: '#e8e0ff', hp: 1100, speed: 92 },
+  { name: 'The Dragon',       model: 'dragon',  color: '#b8321e', horn: '#e8d8b0', hp: 520,  speed: 70 },
+  { name: 'The Chimera',      model: 'chimera', color: '#9a7a3a', horn: '#3a2a1a', hp: 700,  speed: 82 },
+  { name: 'The Plague Fiend', model: 'fiend',   color: '#5a8a3a', horn: '#d0e0a0', hp: 880,  speed: 88 },
+  { name: 'Skorne',           model: 'skorne',  color: '#4a2a5a', horn: '#d8c8a0', hp: 1150, speed: 92 },
 ];
 
 export const LEVELS_PER_REALM = 4;
@@ -25,6 +37,9 @@ export function levelInfo(n) {
     theme: THEMES[realm % THEMES.length],
     isBoss: n % LEVELS_PER_REALM === 0,
     stage: ((n - 1) % LEVELS_PER_REALM) + 1,
+    stageName: n % LEVELS_PER_REALM === 0
+      ? `${BOSSES[realm % BOSSES.length].name.replace(/^The /, '')}'s Lair`
+      : THEMES[realm % THEMES.length].stages[(n - 1) % LEVELS_PER_REALM],
     boss: BOSSES[realm % BOSSES.length],
   };
 }
