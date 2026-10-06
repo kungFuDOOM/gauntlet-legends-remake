@@ -1,0 +1,11 @@
+{
+  "name": "gauntlet-legends-remake",
+  "version": "0.1.0",
+  "description": "A fan-made, browser-based remake of the arcade classic Gauntlet Legends",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}
