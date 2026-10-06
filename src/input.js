@@ -15,7 +15,7 @@ const KB_SCHEMES = {
 
 const BUTTONS = ['attack', 'magic', 'turbo', 'up', 'down', 'left', 'right'];
 const EMPTY = Object.freeze({ x: 0, y: 0, attack: false, magic: false, turbo: false, pressed: {} });
-const PREVENT = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash', 'Quote']);
+const PREVENT = new Set(['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Slash', 'Quote']);
 
 export class Input {
   constructor() {

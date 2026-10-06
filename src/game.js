@@ -1,7 +1,7 @@
 // Core simulation: players, enemies, generators, projectiles, pickups.
 
 import {
-  TILE, VIEW_W, VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
+  TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
   POWERUPS, POWERUP_ORDER, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
 import { T, generateLevel, bfs, walkable } from './level.js';
@@ -9,8 +9,8 @@ import { sfx, say } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const SPREAD_X = VIEW_W - 90;
-const SPREAD_Y = VIEW_H - HUD_H - 90;
+const SPREAD_X = VIEW_W - 110;
+const SPREAD_Y = VIEW_H - 110;
 
 export class Game {
   constructor() {
@@ -28,7 +28,7 @@ export class Game {
       x: 0, y: 0, r: 12, fx: 0, fy: 1, alive: true,
       hp: def.hp, score: 0, keys: 0, potions: 1, xp: 0, lvl: 1,
       strength: def.strength, shotDmg: def.shotDmg, armor: def.armor, speed: def.speed, magic: def.magic,
-      shotCd: 0, turbo: 0, buffs: {}, hurtFlash: 0, invuln: 0, dash: null, swing: 0, walk: 0,
+      shotCd: 0, turbo: 50, buffs: {}, hurtFlash: 0, invuln: 0, dash: null, swing: 0, walk: 0, throwT: 0,
       warnT: 0, deadT: 0, drain: 0,
     };
     this.players[slot] = p;
@@ -189,13 +189,13 @@ export class Game {
     const ps = this.livePlayers().length ? this.livePlayers() : this.allPlayers();
     if (!ps.length) return 0;
     const cx = ps.reduce((s, p) => s + p.x, 0) / ps.length;
-    return Math.max(0, Math.min(this.w * TILE - VIEW_W, cx - VIEW_W / 2));
+    return Math.max(-60, Math.min(this.w * TILE - VIEW_W + 60, cx - VIEW_W / 2));
   }
   camTargetY() {
     const ps = this.livePlayers().length ? this.livePlayers() : this.allPlayers();
     if (!ps.length) return 0;
     const cy = ps.reduce((s, p) => s + p.y, 0) / ps.length;
-    return Math.max(-HUD_H, Math.min(this.h * TILE - VIEW_H, cy - (VIEW_H + HUD_H) / 2));
+    return Math.max(-60, Math.min(this.h * TILE - VIEW_H + 60, cy - VIEW_H / 2));
   }
 
   onScreen(e, pad = 0) {
@@ -281,6 +281,8 @@ export class Game {
     p.invuln = Math.max(0, p.invuln - dt);
     p.shotCd -= dt;
     p.swing = Math.max(0, p.swing - dt);
+    p.throwT = Math.max(0, p.throwT - dt);
+    p.turbo = Math.min(100, p.turbo + dt * 4); // turbo slowly recharges
     p.warnT -= dt;
     for (const k of Object.keys(p.buffs)) { p.buffs[k] -= dt; if (p.buffs[k] <= 0) delete p.buffs[k]; }
 
@@ -407,6 +409,7 @@ export class Game {
       return;
     }
     const angles = p.buffs.triple ? [-0.22, 0, 0.22] : [0];
+    p.throwT = 0.15;
     for (const a of angles) this.fire(p, Math.atan2(p.fy, p.fx) + a, {});
     sfx.shoot(p.def.shot);
   }
@@ -782,7 +785,7 @@ export class Game {
         this.text(it.x, it.y - 14, 'POTION SHATTERED', '#c9a0ff', 1.4);
         return;
       }
-      if (it.type === 'chest') {
+      if (it.type === 'chest' || it.type === 'barrel') {
         it.dead = true; pr.dead = true;
         this.openChest(it);
         return;
@@ -795,7 +798,11 @@ export class Game {
     this.burst(it.x, it.y, '#c9a24a', 14, 120);
     const roll = Math.random();
     const drops = [];
-    if (roll < 0.35) drops.push('gold', 'gold', 'gem');
+    if (it.type === 'barrel') {
+      // barrels are usually empty, sometimes hide food or gold
+      if (roll < 0.25) drops.push('food'); else if (roll < 0.5) drops.push('gold');
+      this.burst(it.x, it.y, '#8a5a2a', 16, 140);
+    } else if (roll < 0.35) drops.push('gold', 'gold', 'gem');
     else if (roll < 0.55) drops.push('food');
     else if (roll < 0.7) drops.push('potion');
     else if (roll < 0.85) drops.push('key', 'gold');
@@ -814,7 +821,7 @@ export class Game {
   updateItems(dt) {
     for (const it of this.items) {
       it.bob += dt * 3;
-      if (it.dead || it.type === 'chest') continue;
+      if (it.dead || it.type === 'chest' || it.type === 'barrel') continue;
       for (const p of this.livePlayers()) {
         if (dist(p, it) > p.r + it.r) continue;
         if (this.pickup(p, it)) { it.dead = true; break; }

@@ -5,19 +5,19 @@ export const T = { WALL: 0, FLOOR: 1, DOOR: 2, EXIT: 3, SEALED: 4 };
 export const THEMES = [
   {
     name: 'Mountain Kingdom', stages: ['Valley of Fire', 'Dagger Peak', 'Cliffs of Desolation'],
-    floorA: '#4a4438', floorB: '#544c3f', wallTop: '#8f846d', wallSide: '#5c5444', dark: 0.35, accent: '#d9c27a', void: '#14110c',
+    floorA: '#4a4438', floorB: '#544c3f', wallTop: '#8f846d', wallSide: '#5c5444', dark: 0.35, accent: '#ffb24a', void: '#14110c', sky: '#1a0f08', fog: '#2a1a10', light: '#ffc890', ambient: 0.6,
   },
   {
     name: 'Castle Stronghold', stages: ['Castle Courtyard', 'Dungeon of Torment', 'Tower Armory'],
-    floorA: '#3b3e4a', floorB: '#444857', wallTop: '#80869b', wallSide: '#4e5263', dark: 0.45, accent: '#9fb0d9', void: '#0e0f14',
+    floorA: '#3b3e4a', floorB: '#444857', wallTop: '#80869b', wallSide: '#4e5263', dark: 0.45, accent: '#a8c0ff', void: '#0e0f14', sky: '#07080c', fog: '#10121a', light: '#d8e0ff', ambient: 0.5,
   },
   {
     name: 'Sky Dominion', stages: ['Poisonous Fields', 'Haunted Cemetery', 'Venomous Spire'],
-    floorA: '#3f5361', floorB: '#4a5f6e', wallTop: '#b0cad9', wallSide: '#6a8698', dark: 0.18, accent: '#e0f0ff', void: '#1a2836',
+    floorA: '#3f5361', floorB: '#4a5f6e', wallTop: '#b0cad9', wallSide: '#6a8698', dark: 0.18, accent: '#e0f4ff', void: '#1a2836', sky: '#6a9ad0', fog: '#7aa8d8', light: '#ffffff', ambient: 0.85,
   },
   {
     name: 'Underworld', stages: ['Gates of the Underworld', 'Lava Pits', 'Hall of Souls'],
-    floorA: '#3a2222', floorB: '#452827', wallTop: '#8f3c2a', wallSide: '#5a2418', dark: 0.55, accent: '#ff7a3a', void: '#120606',
+    floorA: '#3a2222', floorB: '#452827', wallTop: '#8f3c2a', wallSide: '#5a2418', dark: 0.55, accent: '#ff6a3a', void: '#120606', sky: '#140302', fog: '#300805', light: '#ff9060', ambient: 0.45,
   },
 ];
 
@@ -268,6 +268,7 @@ function generateDungeon(n, seed, info) {
   for (let k = 0; k < 2 + Math.floor(rooms.length / 3); k++) addItem('food', randomRoomCell());
   for (let k = 0; k < 6 + n; k++) addItem(R() < 0.15 ? 'gem' : 'gold', randomRoomCell());
   for (let k = 0; k < 2 + Math.floor(n / 2); k++) addItem('chest', randomRoomCell());
+  for (let k = 0; k < 8 + n; k++) addItem('barrel', randomRoomCell());
   for (let k = 0; k < 1 + Math.floor(n / 3); k++) addItem('potion', randomRoomCell());
   if (n >= 2) addItem('amulet', randomRoomCell(), ['speed', 'rapid', 'shield', 'triple'][ri(0, 3)]);
 

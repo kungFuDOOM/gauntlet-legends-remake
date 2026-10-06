@@ -3,7 +3,11 @@
 export const TILE = 32;
 export const VIEW_W = 960;
 export const VIEW_H = 640;
-export const HUD_H = 58;
+export const HUD_H = 0; // HUD panels sit in the corners over the 3D view
+// Size of the world area (in sim units) the 3D camera shows; used for the party leash,
+// potion range and camera clamping.
+export const WORLD_VIEW_W = 680;
+export const WORLD_VIEW_H = 470;
 export const MAX_PLAYERS = 4;
 
 // Health drains by this much per second, just like the arcade original.

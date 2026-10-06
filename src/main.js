@@ -4,13 +4,26 @@ import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, say } from './audio.js';
-import { drawWorld, drawHud, drawMinimap, drawBanner, drawTitle, drawSelect, drawOverlay } from './render.js';
+import { Renderer3D } from './render3d.js';
+import { drawGameOverlay, drawTitle, drawSelect, drawOverlay, titleShowcase, selectShowcase } from './hud.js';
 import { levelInfo } from './level.js';
 
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-canvas.width = VIEW_W;
-canvas.height = VIEW_H;
+const stage = document.getElementById('stage');
+const hudCanvas = document.getElementById('hud');
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+hudCanvas.width = VIEW_W * DPR;
+hudCanvas.height = VIEW_H * DPR;
+const ctx = hudCanvas.getContext('2d');
+ctx.scale(DPR, DPR);
+let r3d;
+try {
+  r3d = new Renderer3D(document.getElementById('webgl'));
+} catch (err) {
+  stage.style.display = 'none';
+  document.getElementById('error').style.display = 'block';
+  throw err;
+}
+let showMinimap = false;
 
 const input = new Input();
 let game = null;
@@ -119,7 +132,7 @@ function updatePlay(dt) {
 
   if (game.exitReached) {
     const info = levelInfo(game.levelNum);
-    clearInfo = { level: game.levelNum, wasBoss: info.isBoss, realm: info.theme.name };
+    clearInfo = { level: game.levelNum, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName };
     setState('levelclear');
     return;
   }
@@ -158,33 +171,35 @@ function updateGameOver() {
 
 function render() {
   ctx.textBaseline = 'alphabetic';
-  if (state === 'title') { drawTitle(ctx, stateT, hiscores); }
-  else if (state === 'select') { drawSelect(ctx, stateT, slots, countdown); }
-  else if (game) {
-    drawWorld(ctx, game);
-    drawBanner(ctx, game);
-    drawMinimap(ctx, game);
-    drawHud(ctx, game, input);
+  if (state === 'title') {
+    r3d.renderShowcase(titleShowcase(stateT), stateT);
+    drawTitle(ctx, stateT, hiscores);
+  } else if (state === 'select') {
+    r3d.renderShowcase(selectShowcase(slots, stateT), stateT);
+    drawSelect(ctx, stateT, slots, countdown);
+  } else if (game) {
+    r3d.render(game);
+    drawGameOverlay(ctx, game, r3d, { minimap: showMinimap });
     if (state === 'paused') {
-      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute sound   V: toggle announcer', `Level ${game.levelNum} — ${game.theme.name}`]);
+      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute sound   V: announcer   TAB: map', `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
       const lines = clearInfo.wasBoss
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, 'A new realm awaits...']
-        : [`Level ${clearInfo.level} complete`, ''];
+        : [`${clearInfo.name} complete`, ''];
       for (const p of game.allPlayers()) lines.push(`${p.name}: ${p.score} pts · level ${p.lvl}`);
       if (stateT > 1) lines.push('', 'Press Attack to continue');
-      drawOverlay(ctx, clearInfo.wasBoss ? 'REALM CONQUERED' : 'LEVEL CLEAR', lines, '#8fe0ff');
+      drawOverlay(ctx, clearInfo.wasBoss ? 'REALM CONQUERED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
       const lines = game.allPlayers().map((p) => `${p.name}: ${p.score} pts`);
       lines.push('', 'Attack: continue (restart level, half score)', 'Magic: return to title');
-      drawOverlay(ctx, 'GAME OVER', lines, '#ff6060');
+      drawOverlay(ctx, 'GAME OVER', lines, '#ff6050');
     }
   }
   if (toast) {
     ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'right';
+    ctx.textAlign = 'center';
     ctx.fillStyle = `rgba(255,255,255,${Math.min(1, toast.t)})`;
-    ctx.fillText(toast.text, VIEW_W - 12, VIEW_H - 140);
+    ctx.fillText(toast.text, VIEW_W / 2, VIEW_H - 150);
   }
 }
 
@@ -196,6 +211,7 @@ function frame(now) {
   input.poll();
 
   if (input.key('KeyM')) { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; }
+  if (input.key('Tab')) showMinimap = !showMinimap;
   if (input.key('KeyV')) { toast = { text: toggleVoice() ? 'Announcer ON' : 'Announcer OFF', t: 1.5 }; }
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
 
@@ -214,13 +230,13 @@ function frame(now) {
 }
 
 // Debug/test hook (used by automated smoke tests).
-window.__gl = { get game() { return game; }, get state() { return state; } };
+window.__gl = { get game() { return game; }, get state() { return state; }, get r3d() { return r3d; } };
 
 // Scale canvas to fit window while keeping aspect ratio.
 function fit() {
   const s = Math.min(window.innerWidth / VIEW_W, window.innerHeight / VIEW_H);
-  canvas.style.width = `${Math.floor(VIEW_W * s)}px`;
-  canvas.style.height = `${Math.floor(VIEW_H * s)}px`;
+  stage.style.width = `${Math.floor(VIEW_W * s)}px`;
+  stage.style.height = `${Math.floor(VIEW_H * s)}px`;
 }
 window.addEventListener('resize', fit);
 fit();
