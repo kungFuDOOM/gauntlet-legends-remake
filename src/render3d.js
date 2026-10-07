@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS } from './config.js';
 import { T } from './level.js';
 import { assets, Actor, cloneProp, MODEL_SCALE } from './assets.js';
-import { capTexture, glowTexture, glowSprite, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
+import { capTexture, grassTexture, lavaTexture, glowTexture, glowSprite, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
 
 const WALL_H = 52;
 const CAM_OFFSET = new THREE.Vector3(0, 380, 240);
@@ -39,9 +39,11 @@ const ENEMY_STYLE = {
 
 export class Renderer3D {
   constructor(canvas) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setSize(VIEW_W, VIEW_H, false);
+    // Rendered at a reduced resolution and scaled up with hard pixel edges for a chunky,
+    // retro look (see setPixelation); antialiasing would only smear the pixels.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+    this.canvas = canvas;
+    this.setPixelation(1);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -100,6 +102,16 @@ export class Renderer3D {
     this.lastTime = 0;
   }
 
+  // 0 = off (full resolution), 1 = retro (default), 2 = chunky.
+  setPixelation(level) {
+    this.pixelLevel = level;
+    const ratio = [Math.min(window.devicePixelRatio || 1, 2), 0.6, 0.4][level];
+    this.renderer.setPixelRatio(ratio);
+    this.renderer.setSize(VIEW_W, VIEW_H, false);
+    this.canvas.style.imageRendering = level ? 'pixelated' : 'auto';
+    return ['Pixels: OFF', 'Pixels: RETRO', 'Pixels: CHUNKY'][level];
+  }
+
   blob(parent, size) {
     const m = new THREE.Mesh(this.shadowGeo, this.shadowMat);
     m.scale.set(size, 1, size);
@@ -112,14 +124,16 @@ export class Renderer3D {
   // ---------- level construction ----------
 
   // Instanced copies of a prop at many transforms ({x, y, z, ry, sx, sy, sz}).
-  instanced(group, name, list) {
+  instanced(group, name, list, tint = null) {
     if (!list.length) return;
     const tpl = assets.props[name];
     tpl.updateMatrixWorld(true);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     tpl.traverse((mesh) => {
       if (!mesh.isMesh) return;
-      const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, list.length);
+      let mat = mesh.material;
+      if (tint) { mat = mat.clone(); mat.color.multiply(new THREE.Color(tint)); }
+      const inst = new THREE.InstancedMesh(mesh.geometry, mat, list.length);
       list.forEach((t, i) => {
         q.setFromAxisAngle(up, t.ry || 0);
         sc.set(t.sx ?? S, t.sy ?? S, t.sz ?? S);
@@ -133,6 +147,26 @@ export class Renderer3D {
     });
   }
 
+  // Instanced primitive (rocks, slabs, lava tiles) with optional per-instance colour.
+  instancedPrim(group, geometry, material, list) {
+    if (!list.length) return null;
+    const inst = new THREE.InstancedMesh(geometry, material, list.length);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), col = new THREE.Color();
+    list.forEach((t, i) => {
+      e.set(t.rx || 0, t.ry || 0, t.rz || 0);
+      q.setFromEuler(e);
+      sc.set(t.sx ?? 1, t.sy ?? 1, t.sz ?? 1);
+      pos.set(t.x, t.y || 0, t.z);
+      inst.setMatrixAt(i, m4.compose(pos, q, sc));
+      if (t.color) inst.setColorAt(i, col.set(t.color));
+    });
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    inst.computeBoundingSphere();
+    group.add(inst);
+    return inst;
+  }
+
   buildLevel(g) {
     if (this.levelGroup) this.scene.remove(this.levelGroup);
     for (const [, v] of this.views) this.scene.remove(v.root);
@@ -143,139 +177,237 @@ export class Renderer3D {
     this.markers.clear();
 
     const th = g.theme;
+    const style = g.info.style;
     const group = new THREE.Group();
     this.levelGroup = group;
     this.level = g.level;
     this.scene.add(group);
     this.scene.background = new THREE.Color(th.sky);
-    this.scene.fog = new THREE.Fog(th.fog, 450, 1000);
+    this.scene.fog = style === 'sky' ? new THREE.Fog(th.fog, 500, 1300) : new THREE.Fog(th.fog, 450, 1000);
     this.hemi.color.set(th.light);
-    this.hemi.groundColor.set(th.fog);
+    this.hemi.groundColor.set(style === 'sky' ? '#8090a0' : th.fog);
     this.hemi.intensity = th.ambient * 1.5;
     this.sun.color.set(th.light);
     this.sun.intensity = th.ambient * 1.2 + 0.2;
 
     const { w, h } = g;
-    const walk = (tx, ty) => g.tile(tx, ty) !== T.WALL;
-    const isWall = (tx, ty) => g.tile(tx, ty) === T.WALL;
+    const ground = g.level.ground;
+    const tileAt = (x, y) => g.tile(x, y);
+    const isWall = (x, y) => tileAt(x, y) === T.WALL;
+    const isVoid = (x, y) => tileAt(x, y) === T.VOID;
+    const open = (x, y) => { const t = tileAt(x, y); return t !== T.WALL && t !== T.VOID; };
+    const rnd = (x, y, k = 0) => hash(x * 13 + k * 101, y * 7 + k * 31);
+    this.torches = [];
+    this.clouds = [];
+    this.lavaMats = [];
 
-    // floor tiles, varied like a real dungeon floor
-    const floors = { floor: [], floor_broken_a: [], floor_broken_b: [], floor_weeds: [], floor_decorated: [] };
+    // ---- ground ----
+    const floorKinds = style === 'canyon' || style === 'inferno'
+      ? [['dirt_a', 0.3], ['dirt_b', 0.25], ['dirt_c', 0.2], ['dirt_d', 0.15], ['dirt_weeds', style === 'canyon' ? 0.1 : 0.0001]]
+      : [['floor', 0.76], ['floor_broken_a', 0.1], ['floor_broken_b', 0.09], ['floor_weeds', style === 'sky' ? 0.0001 : 0.03], ['floor_decorated', 0.02]];
+    const floorTint = style === 'inferno' ? '#c88870' : style === 'sky' ? '#e8eef4' : null;
+    const floors = Object.fromEntries(floorKinds.map(([k]) => [k, []]));
+    const grass = [], bridges = [], lava = [], slabs = [];
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
-        if (!walk(tx, ty)) continue;
-        const r = hash(tx, ty);
-        const kind = r < 0.76 ? 'floor' : r < 0.86 ? 'floor_broken_a' : r < 0.95 ? 'floor_broken_b' : r < 0.975 ? 'floor_weeds' : 'floor_decorated';
-        floors[kind].push({ x: tx * TILE + 16, z: ty * TILE + 16, ry: Math.floor(hash(ty, tx) * 4) * Math.PI / 2 });
+        const t = tileAt(tx, ty);
+        if (t === T.VOID || (t === T.WALL && style !== 'sky')) continue;
+        const x = tx * TILE + 16, z = ty * TILE + 16, ry = Math.floor(rnd(ty, tx) * 4) * Math.PI / 2;
+        if (style === 'sky') slabs.push({ x, y: -21, z, sx: 32.5, sy: 42, sz: 32.5, color: rnd(tx, ty, 5) < 0.5 ? th.rock : '#7c868e' });
+        if (t === T.LAVA) { lava.push({ x, y: -2, z, rx: -Math.PI / 2 }); continue; }
+        if (t === T.BRIDGE) { bridges.push({ x, z, ry: (open(tx - 1, ty) && tileAt(tx - 1, ty) !== T.LAVA) || tileAt(tx + 1, ty) === T.BRIDGE ? 0 : Math.PI / 2 }); continue; }
+        if (ground && ground[ty * w + tx] === 1) { grass.push({ x, y: 0.4, z, rx: -Math.PI / 2, rz: ry }); continue; }
+        let r = rnd(tx, ty), kind = floorKinds[0][0];
+        for (const [k, p] of floorKinds) { if ((r -= p) < 0) { kind = k; break; } }
+        floors[kind].push({ x, z, ry });
       }
-    for (const [k, list] of Object.entries(floors)) this.instanced(group, k, list);
-
-    // walls stand on every floor/wall boundary; caps close off the solid rock above
-    const walls = { wall: [], wall_cracked: [] };
-    const wallFaces = [];
-    const SX = S * 0.54, SY = WALL_H / 4, SZ = S * 0.5;
-    for (let ty = 0; ty < h; ty++)
-      for (let tx = 0; tx < w; tx++) {
-        if (!walk(tx, ty)) continue;
-        const sides = [
-          [0, -1, tx * TILE + 16, ty * TILE - 4, 0],
-          [0, 1, tx * TILE + 16, ty * TILE + TILE + 4, Math.PI],
-          [-1, 0, tx * TILE - 4, ty * TILE + 16, Math.PI / 2],
-          [1, 0, tx * TILE + TILE + 4, ty * TILE + 16, -Math.PI / 2],
-        ];
-        for (const [dx, dy, x, z, ry] of sides) {
-          if (!isWall(tx + dx, ty + dy)) continue;
-          const kind = hash(tx * 7 + dx, ty * 13 + dy) < 0.12 ? 'wall_cracked' : 'wall';
-          walls[kind].push({ x, z, ry, sx: SX, sy: SY, sz: SZ });
-          wallFaces.push({ tx, ty, dx, dy, x, z, ry });
+    for (const [k, list] of Object.entries(floors)) this.instanced(group, k, list, floorTint);
+    this.instanced(group, 'floor_wood', bridges);
+    if (grass.length) this.instancedPrim(group, new THREE.PlaneGeometry(32, 32), new THREE.MeshStandardMaterial({ map: grassTexture(), roughness: 1 }), grass);
+    if (lava.length) {
+      const lm = new THREE.MeshBasicMaterial({ map: lavaTexture(), color: style === 'inferno' ? '#ffffff' : '#ffe0c0' });
+      this.lavaMats.push(lm);
+      this.instancedPrim(group, new THREE.PlaneGeometry(32, 32), lm, lava);
+      // rocky lips around the lava so it reads as a sunken channel
+      const lips = [];
+      for (let ty = 0; ty < h; ty++)
+        for (let tx = 0; tx < w; tx++) {
+          if (tileAt(tx, ty) !== T.LAVA) continue;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const n = tileAt(tx + dx, ty + dy);
+            if (n === T.LAVA || n === T.BRIDGE || n === T.WALL) continue;
+            lips.push({ x: tx * TILE + 16 + dx * 15, y: 0, z: ty * TILE + 16 + dy * 15, sx: dx ? 4 : 17, sy: 3, sz: dy ? 4 : 17, ry: rnd(tx, ty, dx + 2 * dy) * 0.6, color: th.rock });
+          }
+          if (rnd(tx, ty, 9) < 0.06) this.torches.push({ x: tx * TILE + 16, z: ty * TILE + 16, y: 18, color: '#ff5a10', power: 70 });
         }
-      }
-    for (const [k, list] of Object.entries(walls)) this.instanced(group, k, list);
+      this.instancedPrim(group, new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 1 }), lips);
+    }
 
-    const cap = { pos: [], uv: [] };
-    for (let ty = 0; ty < h; ty++)
-      for (let tx = 0; tx < w; tx++) {
-        if (!isWall(tx, ty)) continue;
-        let near = false;
-        for (let oy = -1; oy <= 1 && !near; oy++) for (let ox = -1; ox <= 1; ox++) if (walk(tx + ox, ty + oy)) { near = true; break; }
-        if (!near) continue;
-        const x0 = tx * TILE, z0 = ty * TILE, x1 = x0 + TILE, z1 = z0 + TILE, y = WALL_H + 0.3;
-        cap.pos.push(x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z1, x1, y, z0, x0, y, z0);
-        cap.uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+    // ---- walls ----
+    const wallFaces = [];
+    const SY = WALL_H / 4;
+    if (style === 'castle') {
+      const walls = { wall: [], wall_cracked: [] };
+      for (let ty = 0; ty < h; ty++)
+        for (let tx = 0; tx < w; tx++) {
+          if (!open(tx, ty)) continue;
+          for (const [dx, dy, x, z, ry] of [
+            [0, -1, tx * TILE + 16, ty * TILE - 4, 0], [0, 1, tx * TILE + 16, ty * TILE + TILE + 4, Math.PI],
+            [-1, 0, tx * TILE - 4, ty * TILE + 16, Math.PI / 2], [1, 0, tx * TILE + TILE + 4, ty * TILE + 16, -Math.PI / 2],
+          ]) {
+            if (!isWall(tx + dx, ty + dy)) continue;
+            // single wall tiles inside rooms are free-standing pillars, not wall faces
+            if (this.isPillar(g, tx + dx, ty + dy)) continue;
+            walls[rnd(tx * 7 + dx, ty * 13 + dy) < 0.12 ? 'wall_cracked' : 'wall'].push({ x, z, ry, sx: S * 0.54, sy: SY, sz: S * 0.5 });
+            wallFaces.push({ tx, ty, dx, dy, x, z });
+          }
+        }
+      for (const [k, list] of Object.entries(walls)) this.instanced(group, k, list);
+      this.addCaps(group, g, WALL_H + 0.3, th.wallTop, '#5a5550', (x, y) => !this.isPillar(g, x, y));
+      const pillars = [];
+      for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) if (isWall(tx, ty) && this.isPillar(g, tx, ty)) pillars.push({ x: tx * TILE + 16, z: ty * TILE + 16, sx: S * 0.42, sy: S * 0.42 * 1.1, sz: S * 0.42 });
+      this.instanced(group, 'pillar_decorated', pillars);
+    } else if (style === 'canyon' || style === 'inferno') {
+      // jagged rock cliffs: clusters of boulders along every edge, a rocky plateau behind
+      const rocks = [];
+      for (let ty = 0; ty < h; ty++)
+        for (let tx = 0; tx < w; tx++) {
+          if (!isWall(tx, ty)) continue;
+          let edge = false, orth = false;
+          for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) if ((ox || oy) && open(tx + ox, ty + oy)) { edge = true; if (!ox || !oy) orth = true; }
+          if (!edge) continue;
+          const n = orth ? 3 : 2;
+          for (let k = 0; k < n; k++) {
+            const r1 = rnd(tx, ty, k), r2 = rnd(tx, ty, k + 7), r3 = rnd(tx, ty, k + 13);
+            const hgt = 26 + r3 * 34;
+            const shade = new THREE.Color(th.rock).offsetHSL(0, 0, (r1 - 0.5) * 0.12);
+            rocks.push({ x: tx * TILE + 16 + (r1 - 0.5) * 18, y: hgt * 0.42, z: ty * TILE + 16 + (r2 - 0.5) * 18, sx: 12 + r2 * 9, sy: hgt * 0.6, sz: 12 + r1 * 9, rx: r3 * 0.4, ry: r1 * 6.28, rz: r2 * 0.4, color: `#${shade.getHexString()}` });
+          }
+          if (orth) wallFaces.push({ tx, ty: ty + (open(tx, ty + 1) ? 1 : 0), dx: 0, dy: open(tx, ty + 1) ? -1 : 0, x: tx * TILE + 16, z: ty * TILE + 16 });
+        }
+      this.instancedPrim(group, new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 1 }), rocks);
+      this.addCaps(group, g, 34, th.rock, style === 'inferno' ? '#3a1a14' : '#5a4632');
+    } else {
+      // sky: islands are thick slabs of rock hanging in the clouds; WALL tiles are ruined columns
+      this.instancedPrim(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true }), slabs);
+      const drips = [], cols = [];
+      for (let ty = 0; ty < h; ty++)
+        for (let tx = 0; tx < w; tx++) {
+          const t = tileAt(tx, ty);
+          if (t === T.VOID) continue;
+          if (t === T.WALL) cols.push({ x: tx * TILE + 16, z: ty * TILE + 16, sx: S * 0.9, sy: S * 1.2, sz: S * 0.9 });
+          const edgeV = isVoid(tx - 1, ty) || isVoid(tx + 1, ty) || isVoid(tx, ty - 1) || isVoid(tx, ty + 1);
+          if (edgeV && rnd(tx, ty, 3) < 0.5) drips.push({ x: tx * TILE + 16, y: -42 - rnd(tx, ty, 4) * 10, z: ty * TILE + 16, sx: 12 + rnd(tx, ty, 6) * 8, sy: 30 + rnd(tx, ty, 7) * 50, sz: 12 + rnd(tx, ty, 8) * 8, rx: Math.PI, ry: rnd(tx, ty, 9) * 6, color: th.rock });
+        }
+      this.instancedPrim(group, new THREE.ConeGeometry(1, 1, 5), new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 1 }), drips);
+      this.instanced(group, 'column', cols);
+      // drifting clouds far below
+      for (let k = 0; k < 40; k++) {
+        const c = glowSprite('#ffffff', 260 + hash(k, 3) * 260, 0.5);
+        c.material.blending = THREE.NormalBlending;
+        c.position.set(hash(k, 1) * w * TILE, -220 - hash(k, 2) * 160, hash(k, 4) * h * TILE);
+        group.add(c);
+        this.clouds.push({ s: c, speed: 6 + hash(k, 5) * 10 });
       }
-    const capGeo = new THREE.BufferGeometry();
-    capGeo.setAttribute('position', new THREE.Float32BufferAttribute(cap.pos, 3));
-    capGeo.setAttribute('uv', new THREE.Float32BufferAttribute(cap.uv, 2));
-    capGeo.computeVertexNormals();
-    group.add(new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({ map: capTexture(th.wallTop), color: '#5a5550', roughness: 1 })));
+      const fl = new THREE.Mesh(new THREE.PlaneGeometry(w * TILE * 3, h * TILE * 3), new THREE.MeshBasicMaterial({ color: th.fog }));
+      fl.rotation.x = -Math.PI / 2;
+      fl.position.set(w * TILE / 2, -420, h * TILE / 2);
+      group.add(fl);
+    }
 
-    // gates on door tiles; they sink into the floor when unlocked
+    // ---- gates on door tiles; they sink into the floor when unlocked ----
     this.doors = new Map();
-    const open = (x, y) => { const k = g.tile(x, y); return k === T.FLOOR || k === T.EXIT; };
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
-        if (g.tile(tx, ty) !== T.DOOR) continue;
+        if (tileAt(tx, ty) !== T.DOOR) continue;
         const d = cloneProp('wall_gated');
         d.scale.set(S * 0.5, SY, S * 0.6);
         d.position.set(tx * TILE + 16, 0, ty * TILE + 16);
-        if (open(tx - 1, ty) || open(tx + 1, ty)) d.rotation.y = Math.PI / 2;
+        const passable = (x, y) => { const k = tileAt(x, y); return k === T.FLOOR || k === T.EXIT || k === T.BRIDGE; };
+        if (passable(tx - 1, ty) || passable(tx + 1, ty)) d.rotation.y = Math.PI / 2;
         group.add(d);
         this.doors.set(ty * w + tx, d);
       }
 
-    // torches and banners on walls that face the camera, crates and bones for clutter
-    this.torches = [];
+    // ---- light sources and dressing ----
     const torchSpots = [];
-    const decoSpots = [];
-    for (const f of wallFaces) {
-      const facesCam = f.dy === -1; // wall to the north: its face looks south toward the camera
-      const r = hash(f.tx * 3 + 11, f.ty * 5 + 7);
-      if (facesCam && r < 0.2 && !torchSpots.some((p) => Math.abs(p.tx - f.tx) + Math.abs(p.ty - f.ty) < 5)) torchSpots.push(f);
-      else if (facesCam && r > 0.93) decoSpots.push(f);
-    }
-    for (const f of torchSpots) {
-      const t = cloneProp('torch');
-      t.scale.setScalar(S);
-      t.position.set(f.x, 30, f.ty * TILE);
-      const halo = glowSprite('#ffa040', 46, 0.75);
-      halo.position.set(f.x, 42, f.ty * TILE + 8);
-      group.add(t, halo);
-      this.torches.push({ x: f.x, z: f.ty * TILE + 10, halo });
-    }
-    for (const f of decoSpots) {
-      const b = cloneProp(hash(f.tx, f.ty) < 0.5 ? 'banner_red' : 'banner_blue');
-      b.scale.set(S * 0.5, S * 0.42, S * 0.5);
-      b.position.set(f.x, 0, f.ty * TILE - 8);
-      group.add(b);
-    }
-    const clutter = [];
-    for (let ty = 0; ty < h; ty++)
-      for (let tx = 0; tx < w; tx++) {
-        if (g.tile(tx, ty) !== T.FLOOR) continue;
-        const r = hash(tx * 17 + 3, ty * 31 + 5);
-        const wallN = isWall(tx, ty - 1), wallW = isWall(tx - 1, ty), wallE = isWall(tx + 1, ty);
-        if (wallN && (wallW || wallE) && r < 0.35) {
-          const kinds = ['barrel_stack', 'crates', 'keg'];
-          const p = cloneProp(kinds[Math.floor(hash(ty, tx * 3) * kinds.length)]);
-          p.scale.setScalar(S * 0.5);
-          p.position.set(tx * TILE + (wallW ? 10 : 22), 0, ty * TILE + 10);
-          p.rotation.y = hash(tx, ty * 9) * Math.PI;
-          group.add(p);
-        } else if (r < 0.025) clutter.push({ tx, ty, r });
+    if (style === 'castle') {
+      for (const f of wallFaces) {
+        if (f.dy !== -1) continue;
+        const r = rnd(f.tx * 3 + 11, f.ty * 5 + 7);
+        if (r < 0.2 && !torchSpots.some((p) => Math.abs(p.tx - f.tx) + Math.abs(p.ty - f.ty) < 5)) torchSpots.push(f);
+        else if (r > 0.93) {
+          const b = cloneProp(rnd(f.tx, f.ty) < 0.5 ? 'banner_red' : 'banner_blue');
+          b.scale.set(S * 0.5, S * 0.42, S * 0.5);
+          b.position.set(f.x, 0, f.ty * TILE - 8);
+          group.add(b);
+        }
       }
-    for (const c of clutter) {
-      const kinds = ['bones_a', 'bones_b', 'skull', 'ribcage'];
-      const k = kinds[Math.floor(hash(c.tx * 5, c.ty) * kinds.length)];
-      const p = cloneProp(k);
-      p.scale.setScalar(S * (k === 'skull' || k === 'ribcage' ? 0.3 : 0.45));
-      p.position.set(c.tx * TILE + 8 + hash(c.ty, c.tx) * 16, k === 'ribcage' ? 4 : 2, c.ty * TILE + 8 + c.r * 400);
-      p.rotation.y = c.r * 300;
-      group.add(p);
+      for (const f of torchSpots) {
+        const t = cloneProp('torch');
+        t.scale.setScalar(S);
+        t.position.set(f.x, 30, f.ty * TILE);
+        const halo = glowSprite('#ffa040', 46, 0.75);
+        halo.position.set(f.x, 42, f.ty * TILE + 8);
+        group.add(t, halo);
+        this.torches.push({ x: f.x, z: f.ty * TILE + 10, y: 46, halo, color: '#ff9a50', power: 110 });
+      }
+    } else {
+      // standing lanterns along the paths
+      const spots = [];
+      for (let ty = 0; ty < h; ty++)
+        for (let tx = 0; tx < w; tx++) {
+          if (tileAt(tx, ty) !== T.FLOOR) continue;
+          const nearEdge = style === 'sky'
+            ? (isVoid(tx, ty - 1) || isVoid(tx - 1, ty) || isVoid(tx + 1, ty))
+            : (isWall(tx, ty - 1) || isWall(tx - 1, ty) || isWall(tx + 1, ty));
+          if (!nearEdge || rnd(tx, ty, 21) > 0.08) continue;
+          if (spots.some(([x, y]) => Math.abs(x - tx) + Math.abs(y - ty) < 7)) continue;
+          spots.push([tx, ty]);
+        }
+      for (const [tx, ty] of spots) {
+        const tall = style === 'sky';
+        const l = cloneProp(tall ? 'post_lantern' : 'lantern');
+        l.scale.setScalar(S * (tall ? 0.55 : 0.75));
+        l.position.set(tx * TILE + 16, 0, ty * TILE + 16);
+        l.rotation.y = rnd(tx, ty, 2) * 6.28;
+        const hy = tall ? 30 : 12;
+        const halo = glowSprite(style === 'inferno' ? '#ff6a20' : '#ffc060', 40, 0.7);
+        halo.position.set(tx * TILE + 16, hy, ty * TILE + 16);
+        group.add(l, halo);
+        this.torches.push({ x: tx * TILE + 16, z: ty * TILE + 16, y: hy + 14, halo, color: style === 'inferno' ? '#ff6a30' : '#ffb060', power: 95 });
+      }
     }
 
-    // exit portal flanked by candles
+    // clutter: realm-specific props scattered in corners and along edges
+    const deco = {
+      castle: { corner: ['barrel_stack', 'crates', 'keg'], scatter: ['bones_a', 'skull'] },
+      canyon: { corner: ['tree_dead_small', 'tree_dead_medium', 'rubble'], scatter: ['bones_a', 'bones_b', 'skull'] },
+      inferno: { corner: ['tree_dead_medium', 'skull_candle', 'ribcage'], scatter: ['bones_a', 'bones_b', 'skull', 'ribcage'] },
+      sky: { corner: ['gravestone', 'grave', 'fence'], scatter: ['bones_a', 'skull', 'candles'] },
+    }[style];
+    const SCALE = { barrel_stack: 0.5, crates: 0.5, keg: 0.5, tree_dead_small: 0.9, tree_dead_medium: 0.8, rubble: 0.22, skull_candle: 0.55, ribcage: 0.45, gravestone: 0.7, grave: 0.6, fence: 0.5, bones_a: 0.45, bones_b: 0.45, skull: 0.3, candles: 0.6 };
+    const wallish = style === 'sky' ? isVoid : isWall;
+    for (let ty = 0; ty < h; ty++)
+      for (let tx = 0; tx < w; tx++) {
+        if (tileAt(tx, ty) !== T.FLOOR) continue;
+        const r = rnd(tx * 17 + 3, ty * 31 + 5);
+        const wN = wallish(tx, ty - 1), wW = wallish(tx - 1, ty), wE = wallish(tx + 1, ty);
+        let k = null;
+        if (wN && (wW || wE) && r < 0.4) k = deco.corner[Math.floor(rnd(ty, tx * 3) * deco.corner.length)];
+        else if (r < 0.025) k = deco.scatter[Math.floor(rnd(tx * 5, ty) * deco.scatter.length)];
+        if (!k) continue;
+        const p = cloneProp(k);
+        p.scale.setScalar(S * SCALE[k]);
+        p.position.set(tx * TILE + 16 + (wW ? -6 : wE ? 6 : (r - 0.5) * 10), k === 'ribcage' ? 4 : 0, ty * TILE + 16 + (wN ? -6 : 0));
+        p.rotation.y = rnd(tx, ty * 9) * Math.PI * 2;
+        if (style === 'inferno' && k.startsWith('tree')) p.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiply(new THREE.Color('#5a3a30')); } });
+        group.add(p);
+      }
+
+    // ---- exit portal flanked by candles ----
     const ex = g.level.exit;
-    this.exitSealed = g.tile(ex.x, ex.y) === T.SEALED;
+    this.exitSealed = tileAt(ex.x, ex.y) === T.SEALED;
     this.exit = buildExit(this.exitSealed);
     this.exit.position.set(ex.x * TILE + 16, 0.5, ex.y * TILE + 16);
     group.add(this.exit);
@@ -285,6 +417,32 @@ export class Renderer3D {
       c.position.set(ex.x * TILE + 16 + ox, 0, ex.y * TILE);
       group.add(c);
     }
+  }
+
+  // A lone wall tile with open floor on all four sides (courtyard pillars, island ruins).
+  isPillar(g, tx, ty) {
+    const o = (x, y) => { const t = g.tile(x, y); return t !== T.WALL && t !== T.VOID; };
+    return g.tile(tx, ty) === T.WALL && o(tx - 1, ty) && o(tx + 1, ty) && o(tx, ty - 1) && o(tx, ty + 1);
+  }
+
+  // Flat caps over solid ground near the play area hide the void behind walls.
+  addCaps(group, g, y, texColor, tint, include = () => true) {
+    const pos = [], uv = [];
+    for (let ty = 0; ty < g.h; ty++)
+      for (let tx = 0; tx < g.w; tx++) {
+        if (g.tile(tx, ty) !== T.WALL || !include(tx, ty)) continue;
+        let near = false;
+        for (let oy = -2; oy <= 2 && !near; oy++) for (let ox = -2; ox <= 2; ox++) { const t = g.tile(tx + ox, ty + oy); if (t !== T.WALL && t !== T.VOID) { near = true; break; } }
+        if (!near) continue;
+        const x0 = tx * TILE, z0 = ty * TILE, x1 = x0 + TILE, z1 = z0 + TILE;
+        pos.push(x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z1, x1, y, z0, x0, y, z0);
+        uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+      }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeVertexNormals();
+    group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: capTexture(texColor), color: tint, roughness: 1 })));
   }
 
   // ---------- views for entities ----------
@@ -643,7 +801,9 @@ export class Renderer3D {
       this.exit.userData.halo.material.opacity = 0.6;
     }
     this.exit.userData.disk.rotation.z = -t * 2.5;
-    for (const tc of this.torches) tc.halo.scale.setScalar(44 * (1 + Math.sin(t * 17 + tc.x) * 0.1 + Math.sin(t * 29 + tc.z) * 0.06));
+    for (const tc of this.torches) if (tc.halo) tc.halo.scale.setScalar(44 * (1 + Math.sin(t * 17 + tc.x) * 0.1 + Math.sin(t * 29 + tc.z) * 0.06));
+    for (const m of this.lavaMats) { m.map.offset.set(Math.sin(t * 0.3) * 0.08, t * 0.05); }
+    for (const c of this.clouds) c.s.position.x = ((c.s.position.x + c.speed * 0.016) % (g.w * TILE + 400));
   }
 
   syncLights(g, t, cx, cz) {
@@ -653,8 +813,9 @@ export class Renderer3D {
     this.torchLights.forEach((l, i) => {
       const s = sorted[i];
       if (!s || s.d > 800 * 800) { l.intensity = 0; return; }
-      l.position.set(s.tc.x, 46, s.tc.z + 10);
-      l.intensity = 110 * (1 + Math.sin(t * 13 + i * 3) * 0.08);
+      l.position.set(s.tc.x, s.tc.y ?? 46, s.tc.z + 10);
+      l.color.set(s.tc.color || '#ff9a50');
+      l.intensity = (s.tc.power || 110) * (1 + Math.sin(t * 13 + i * 3) * 0.08);
     });
     const ps = g.allPlayers();
     this.playerLights.forEach((l, i) => {

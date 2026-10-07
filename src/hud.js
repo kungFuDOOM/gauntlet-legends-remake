@@ -333,6 +333,7 @@ export function drawTitle(ctx, time, hiscores) {
     'P1: WASD move · SPACE attack · E magic · hold SHIFT + attack = turbo',
     'P2: ARROWS move · ENTER attack · . magic · hold RIGHT SHIFT + attack = turbo',
     'Gamepads: stick move · A attack · B magic · hold X/RB + A = turbo · up to 4 players',
+    'P pause · M mute · V announcer · X pixel size · TAB map',
   ];
   lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 532 + i * 17, '#e0d4b8', '#000', 3));
   if (hiscores.length) {

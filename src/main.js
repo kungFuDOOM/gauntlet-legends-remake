@@ -25,6 +25,10 @@ try {
   throw err;
 }
 let showMinimap = false;
+try {
+  const saved = Number(localStorage.getItem('gl-remake-pixels'));
+  if (saved >= 0 && saved <= 2 && localStorage.getItem('gl-remake-pixels') !== null) r3d.setPixelation(saved);
+} catch { /* storage unavailable */ }
 
 const input = new Input();
 let game = null;
@@ -187,7 +191,7 @@ function render() {
     r3d.render(game);
     drawGameOverlay(ctx, game, r3d, { minimap: showMinimap });
     if (state === 'paused') {
-      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute sound   V: announcer   TAB: map', `${game.info.stageName} — ${game.theme.name}`]);
+      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
       const lines = clearInfo.wasBoss
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, 'A new realm awaits...']
@@ -218,6 +222,11 @@ function frame(now) {
 
   if (input.key('KeyM')) { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; }
   if (input.key('Tab')) showMinimap = !showMinimap;
+  if (input.key('KeyX')) {
+    const level = (r3d.pixelLevel + 1) % 3;
+    toast = { text: r3d.setPixelation(level), t: 1.5 };
+    try { localStorage.setItem('gl-remake-pixels', String(level)); } catch { /* storage unavailable */ }
+  }
   if (input.key('KeyV')) { toast = { text: toggleVoice() ? 'Announcer ON' : 'Announcer OFF', t: 1.5 }; }
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
 

@@ -24,7 +24,7 @@ Any static file server works too, e.g. `python3 -m http.server`. The game uses E
 | **Player 2** (keyboard) | Arrows | Enter / `/` | `.` / `'` | Right Shift / `,` |
 | **Gamepads** (up to 4) | Stick / D-pad | A / RT | B / Y | X / RB + A |
 
-`P`/`Esc`/Start pauses · `M` mutes sound · `V` turns the announcer on or off · `Tab` shows a map of explored areas.
+`P`/`Esc`/Start pauses · `M` mutes sound · `V` turns the announcer on or off · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
 
 Up to **4 players** can play co-op on one screen. Press Attack on any unused keyboard or gamepad to join, even in the middle of a level.
 
@@ -44,7 +44,15 @@ Up to **4 players** can play co-op on one screen. Press Attack on any unused key
 - **Keys and doors.** Keys are placed so a level can never become unwinnable, whichever doors you open first. This is checked by the tests.
 - **RPG progression.** Kills give experience; levelling up raises strength, shot damage, armor, speed and magic.
 - **Amulets** give temporary powers: Speed, Rapid Fire, Invulnerability and Triple Shot. Treasure chests drop random loot.
-- **Four realms** with the original's stage names (Valley of Fire, Dagger Peak, Castle Courtyard, ...). Each realm has 3 procedurally generated dungeons followed by a **boss fight** against the Dragon, the Chimera, the Plague Fiend or Skorne. Bosses breathe fire in every direction, charge and summon minions; defeating one earns a Rune Stone.
+- **Four realms, each built differently**, like the original's level design:
+  - **Mountain Kingdom:** winding canyon trails between jagged cliffs, crossed by lava rivers with wooden bridges
+  - **Castle Stronghold:** grassy courtyards ringed by pillars, joined by wide stone halls
+  - **Sky Dominion:** stone islands floating above drifting clouds, linked by narrow bridges
+  - **Underworld:** scorched caverns riddled with lava
+
+  Each realm has 3 procedurally generated levels with the original's stage names (Valley of Fire, Castle Courtyard, ...), then a **boss fight** against the Dragon, the Chimera, the Plague Fiend or Skorne. Bosses breathe fire in every direction, charge and summon minions; defeating one earns a Rune Stone.
+- **Lava** burns heroes who wade through it (monsters won't go near it), **gates** block the trail until you find a key, and **treasure vaults** behind locked gates hold chests, gems and potions.
+- **Pixel-art rendering:** the 3D view is drawn at a low resolution and scaled up with hard pixel edges for a retro look (press `X` to change it).
 - **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
 - **Arcade announcer** via your browser's speech synthesis ("Warrior needs food, badly!"). Also: a shared camera that keeps the party together, a minimap of explored areas, a high score table, and drop-in "continue" after dying.

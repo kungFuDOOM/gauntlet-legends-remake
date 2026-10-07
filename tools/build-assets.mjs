@@ -87,11 +87,16 @@ const props = {
   floor_decorated: 'floor_tile_small_decorated.gltf.glb', floor_weeds: 'floor_tile_small_weeds_A.gltf.glb', floor_grate: 'floor_tile_grate.gltf.glb',
   wall: 'wall.gltf.glb', wall_cracked: 'wall_cracked.gltf.glb', wall_gated: 'wall_gated.gltf.glb', barrel_stack: 'barrel_small_stack.gltf.glb',
   crates: 'crates_stacked.gltf.glb', keg: 'keg_decorated.gltf.glb',
+  dirt_a: 'floor_dirt_small_A.gltf.glb', dirt_b: 'floor_dirt_small_B.gltf.glb', dirt_c: 'floor_dirt_small_C.gltf.glb',
+  dirt_d: 'floor_dirt_small_D.gltf.glb', dirt_weeds: 'floor_dirt_small_weeds.gltf.glb', floor_wood: 'floor_wood_small.gltf.glb',
+  pillar_decorated: 'pillar_decorated.gltf.glb',
 };
 for (const [name, f] of Object.entries(props)) await convert(join(DUN, f), name);
 const spooky = {
   bones_a: 'bone_A.gltf', bones_b: 'bone_B.gltf', skull: 'skull.gltf', ribcage: 'ribcage.gltf', grave: 'grave_A.gltf',
   gravestone: 'gravestone.gltf', coffin: 'coffin_decorated.gltf', shrine: 'shrine_candles.gltf', candles: 'candle_triple.gltf',
   skull_candle: 'skull_candle.gltf', pumpkin: 'pumpkin_orange_jackolantern.gltf',
+  tree_dead_small: 'tree_dead_small.gltf', tree_dead_medium: 'tree_dead_medium.gltf', fence: 'fence.gltf',
+  lantern: 'lantern_standing.gltf', post_lantern: 'post_lantern.gltf',
 };
 for (const [name, f] of Object.entries(spooky)) await convert(join(HAL, f), name);

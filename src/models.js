@@ -102,6 +102,45 @@ export function capTexture(base) {
   });
 }
 
+let grassTex = null;
+export function grassTexture() {
+  if (grassTex) return grassTex;
+  grassTex = canvasTex(64, (ctx, s) => {
+    ctx.fillStyle = '#4a7a30';
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 220; i++) {
+      ctx.fillStyle = ['#5a8a38', '#3e6a28', '#6a9a40', '#4f7f2c'][i % 4];
+      const x = Math.random() * s, y = Math.random() * s;
+      ctx.fillRect(x, y, 1 + Math.random() * 2, 2 + Math.random() * 3);
+    }
+    for (let i = 0; i < 5; i++) { ctx.fillStyle = Math.random() < 0.5 ? '#e8d870' : '#d8e0f0'; ctx.fillRect(Math.random() * s, Math.random() * s, 2, 2); }
+  });
+  grassTex.magFilter = THREE.NearestFilter;
+  return grassTex;
+}
+
+let lavaTex = null;
+export function lavaTexture() {
+  if (lavaTex) return lavaTex;
+  lavaTex = canvasTex(128, (ctx, s) => {
+    ctx.fillStyle = '#c02808';
+    ctx.fillRect(0, 0, s, s);
+    // bright molten veins between darker cooling crust
+    for (let i = 0; i < 26; i++) {
+      const x = Math.random() * s, y = Math.random() * s, r = 6 + Math.random() * 16;
+      for (const [ox, oy] of [[0, 0], [s, 0], [-s, 0], [0, s], [0, -s]]) {
+        const gr = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        gr.addColorStop(0, i % 3 ? 'rgba(255,220,80,0.9)' : 'rgba(90,20,6,0.8)');
+        gr.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gr;
+        ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+      }
+    }
+    noise(ctx, s, 20);
+  });
+  return lavaTex;
+}
+
 let glowTex = null;
 export function glowTexture() {
   if (glowTex) return glowTex;

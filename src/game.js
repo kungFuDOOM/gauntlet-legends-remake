@@ -128,17 +128,24 @@ export class Game {
     return this.tiles[ty * this.w + tx];
   }
 
-  solid(tx, ty) {
+  // Blocks walking. Open sky (VOID) blocks feet but not shots; monsters also refuse to step
+  // into lava, while heroes may wade through it and burn.
+  solid(tx, ty, avoidLava = false) {
+    const t = this.tile(tx, ty);
+    return t === T.WALL || t === T.DOOR || t === T.SEALED || t === T.VOID || (avoidLava && t === T.LAVA);
+  }
+
+  blocksShots(tx, ty) {
     const t = this.tile(tx, ty);
     return t === T.WALL || t === T.DOOR || t === T.SEALED;
   }
 
-  collides(x, y, r) {
+  collides(x, y, r, avoidLava = false) {
     const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
     const y0 = Math.floor((y - r) / TILE), y1 = Math.floor((y + r) / TILE);
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++) {
-        if (!this.solid(tx, ty)) continue;
+        if (!this.solid(tx, ty, avoidLava)) continue;
         const cx = Math.max(tx * TILE, Math.min(x, tx * TILE + TILE));
         const cy = Math.max(ty * TILE, Math.min(y, ty * TILE + TILE));
         if ((x - cx) ** 2 + (y - cy) ** 2 < r * r) return true;
@@ -148,8 +155,9 @@ export class Game {
 
   move(e, dx, dy) {
     let blocked = false;
-    if (dx) { if (!this.collides(e.x + dx, e.y, e.r)) e.x += dx; else blocked = true; }
-    if (dy) { if (!this.collides(e.x, e.y + dy, e.r)) e.y += dy; else blocked = true; }
+    const avoid = e.kind === 'enemy' && e.type !== 'ghost';
+    if (dx) { if (!this.collides(e.x + dx, e.y, e.r, avoid)) e.x += dx; else blocked = true; }
+    if (dy) { if (!this.collides(e.x, e.y + dy, e.r, avoid)) e.y += dy; else blocked = true; }
     return blocked;
   }
 
@@ -158,7 +166,7 @@ export class Game {
     const steps = Math.ceil(d / 12);
     for (let i = 1; i < steps; i++) {
       const x = a.x + (b.x - a.x) * (i / steps), y = a.y + (b.y - a.y) * (i / steps);
-      if (this.solid(Math.floor(x / TILE), Math.floor(y / TILE))) return false;
+      if (this.blocksShots(Math.floor(x / TILE), Math.floor(y / TILE))) return false;
     }
     return true;
   }
@@ -312,6 +320,16 @@ export class Game {
       const ok = this.spreadOk(p, p.x + dx, p.y + dy);
       const blocked = this.move(p, ok.x ? dx : 0, ok.y ? dy : 0);
       if (blocked && p.keys > 0) this.tryOpenDoor(p, mx, my);
+    }
+
+    // Lava burns anyone wading through it
+    if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.LAVA && !p.dash && p.invuln <= 0 && !p.buffs.shield) {
+      p.burn = (p.burn || 0) + 45 * dt;
+      if (p.burn >= 1) { const d = Math.floor(p.burn); p.burn -= d; p.hp -= d; }
+      p.hurtFlash = Math.max(p.hurtFlash, 0.05);
+      if (Math.random() < dt * 20) this.particle(p.x + rand(-8, 8), p.y + rand(-8, 8), rand(-20, 20), rand(-40, -10), Math.random() < 0.5 ? '#ff8a20' : '#ffd040', 0.5, 3);
+      sfx.hurt();
+      if (p.hp <= 0) { this.killPlayer(p); return; }
     }
 
     // Exit
@@ -553,7 +571,7 @@ export class Game {
     const a = Math.random() * Math.PI * 2;
     const x = g.x + Math.cos(a) * 26, y = g.y + Math.sin(a) * 26;
     const r = ENEMIES[g.type].r;
-    if (!this.collides(x, y, r)) {
+    if (!this.collides(x, y, r, true)) {
       this.spawnEnemy(g.type, x, y).fromGen = true;
       this.burst(x, y, '#6a5a8a', 5, 60);
     }
@@ -759,7 +777,7 @@ export class Game {
     pr.x += pr.vx * dt;
     pr.y += pr.vy * dt;
     pr.spin = (pr.spin || 0) + dt * 20;
-    if (this.solid(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))) {
+    if (this.blocksShots(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))) {
       pr.dead = true;
       this.burst(pr.x - pr.vx * dt, pr.y - pr.vy * dt, pr.owner === 'player' ? '#ddd' : '#ff8040', 4, 60);
       return;

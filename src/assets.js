@@ -16,6 +16,8 @@ const PROPS = [
   'banner_red', 'banner_blue', 'sword_shield', 'rubble', 'floor', 'floor_broken_a', 'floor_broken_b', 'floor_decorated',
   'floor_weeds', 'floor_grate', 'wall', 'wall_cracked', 'wall_gated', 'barrel_stack', 'crates', 'keg',
   'bones_a', 'bones_b', 'skull', 'ribcage', 'grave', 'gravestone', 'coffin', 'shrine', 'candles', 'skull_candle', 'pumpkin',
+  'dirt_a', 'dirt_b', 'dirt_c', 'dirt_d', 'dirt_weeds', 'floor_wood', 'pillar_decorated',
+  'tree_dead_small', 'tree_dead_medium', 'fence', 'lantern', 'post_lantern',
 ];
 
 export const assets = { chars: {}, props: {}, clips: {}, ready: false };
@@ -91,7 +93,12 @@ function prepareCharacter(scene, colors) {
     } catch { /* keep separate meshes */ }
   }
   scene.traverse((o) => {
-    if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; }
+    if (!o.isMesh) return;
+    o.castShadow = false;
+    o.frustumCulled = false;
+    // crisp texels to go with the pixelated rendering
+    const map = o.material && o.material.map;
+    if (map) { map.magFilter = THREE.NearestFilter; map.minFilter = THREE.NearestMipmapNearestFilter; map.needsUpdate = true; }
   });
   return scene;
 }
