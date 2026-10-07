@@ -67,7 +67,7 @@ export const SECRET_HEROES = [
   { cls: 'jackal', how: 'Defeat the Plague Fiend', test: (p) => !!p.completed[12] },
   { cls: 'tigress', how: 'Recover 12 Rune Stones', test: (p) => runeCount(p) >= 12 },
 ];
-const BASE = ['warrior', 'valkyrie', 'wizard', 'archer'];
+const BASE = ['warrior', 'valkyrie', 'wizard', 'archer', 'dwarf', 'knight', 'jester', 'sorceress'];
 
 export function unlockedClasses(progress) {
   return [...BASE, ...SECRET_HEROES.filter((h) => h.test(progress)).map((h) => h.cls)];

@@ -432,6 +432,14 @@ export function buildProjectile(kind) {
       part(spin, G.ico(4.5), m('#ff6030', { emissive: '#ff3010', emissiveIntensity: 3 }), 0, 0, 0, false);
       glow = '#ff3010'; size = 40;
       break;
+    case 'dagger':
+      part(spin, G.box(10, 2, 1), m('#e8e8f0', { metalness: 0.8, roughness: 0.2 }), 2, 0, 0, false);
+      part(spin, G.box(1.4, 5, 1.4), m('#d8b040'), -4, 0, 0, false);
+      break;
+    case 'spark':
+      part(spin, G.oct(4), m('#f0a0ff', { emissive: '#d040ff', emissiveIntensity: 3 }), 0, 0, 0, false);
+      glow = '#d040ff'; size = 40;
+      break;
     case 'bolt':
       part(spin, G.oct(4), m('#ff80ff', { emissive: '#e040ff', emissiveIntensity: 3 }), 0, 0, 0, false);
       glow = '#d040ff'; size = 36;
@@ -457,6 +465,7 @@ export function buildMarker() {
 export function heroColor(cls) {
   return {
     warrior: '#ff5030', valkyrie: '#5090ff', wizard: '#ffd040', archer: '#50e070',
+    dwarf: '#e08030', knight: '#d0d4e8', jester: '#b050f0', sorceress: '#e060ff',
     minotaur: '#d08040', falconess: '#e080e0', jackal: '#e0c060', tigress: '#ff9a30',
   }[cls] || '#ffffff';
 }

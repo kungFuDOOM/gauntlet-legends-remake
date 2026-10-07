@@ -307,7 +307,7 @@ export function drawLoading(ctx, progress, error) {
 }
 
 export function titleShowcase(time) {
-  return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 446, scale: 1.8, turn: Math.sin(time * 0.7 + i) * 0.35 }));
+  return CLASS_ORDER.map((cls, i) => ({ cls, sx: 95 + i * 110, sy: 450, scale: 1.02, turn: Math.sin(time * 0.7 + i) * 0.35 }));
 }
 
 export function drawTitle(ctx, time, hiscores, progress = null) {
@@ -333,7 +333,8 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
   outlined(ctx, 'a fan-made remake', VIEW_W / 2, 222, '#d8c8a0', '#000', 3);
 
   ctx.font = `bold 13px ${SANS}`;
-  CLASS_ORDER.forEach((cls, i) => outlined(ctx, CLASSES[cls].name.toUpperCase(), 210 + i * 180, 466, CLASSES[cls].color, '#000', 4));
+  ctx.font = `bold 11px ${SANS}`;
+  CLASS_ORDER.forEach((cls, i) => outlined(ctx, CLASSES[cls].name.toUpperCase(), 95 + i * 110, 470, CLASSES[cls].color, '#000', 4));
 
   if (Math.floor(time * 2) % 2) {
     ctx.font = `bold 24px ${SANS}`;
@@ -365,7 +366,7 @@ export function selectShowcase(slots, time) {
   for (let s = 0; s < MAX_PLAYERS; s++) {
     const slot = slots[s];
     if (!slot) continue;
-    out.push({ cls: slot.cls, sx: SEL_X0 + s * (SEL_W + SEL_GAP) + SEL_W / 2, sy: SEL_Y + 262, scale: 2.15, turn: time * 0.9 + s, walk: false, cheer: slot.ready });
+    out.push({ cls: slot.cls, sx: SEL_X0 + s * (SEL_W + SEL_GAP) + SEL_W / 2, sy: SEL_Y + 262, scale: 1.75, turn: time * 0.9 + s, walk: false, cheer: slot.ready });
   }
   return out;
 }
@@ -477,14 +478,14 @@ export function partyShowcase(g, time, cheer = false, wide = false) {
   if (!g) return [];
   const ps = g.allPlayers();
   return ps.map((p, i) => ({
-    cls: p.cls, sx: VIEW_W / 2 + (i - (ps.length - 1) / 2) * (wide ? 170 : 120), sy: wide ? 470 : 612, scale: wide ? 1.5 : 0.95,
+    cls: p.cls, sx: VIEW_W / 2 + (i - (ps.length - 1) / 2) * (wide ? 170 : 120), sy: wide ? 470 : 612, scale: wide ? 1.22 : 0.78,
     turn: Math.sin(time * 0.8 + i) * 0.3, cheer,
   }));
 }
 
 export function storyShowcase(time, g) {
   if (g) return partyShowcase(g, time, false, true);
-  return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 380, scale: 1.25, turn: Math.sin(time * 0.6 + i) * 0.4 }));
+  return CLASS_ORDER.slice(0, 4).map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 400, scale: 1.14, turn: Math.sin(time * 0.6 + i) * 0.4 }));
 }
 
 function wrap(ctx, text, maxW) {

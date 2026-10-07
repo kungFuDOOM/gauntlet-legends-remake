@@ -4,7 +4,7 @@ A fan-made remake of the 1998 arcade classic **Gauntlet Legends** that runs in t
 
 It is plain JavaScript with no build step. The only library is [three.js](https://threejs.org), included in `vendor/` (MIT licensed).
 
-The heroes, monsters and dungeon are animated 3D models from Kay Lousberg's free **CC0** KayKit packs (see [`assets/CREDITS.md`](assets/CREDITS.md)). A few things the packs don't cover (three of the bosses, magic pickups, effects) are built in code. Sounds are synthesized. None of the original game's art, models, audio or levels are used.
+The **heroes** are original models built in code (`src/heroes.js`) in the style of the arcade era: adult proportions, smooth low-poly limbs and bold costumes, attached to an animated rig. The **monsters and dungeon** are animated 3D models from Kay Lousberg's free **CC0** KayKit packs (see [`assets/CREDITS.md`](assets/CREDITS.md)). A few things the packs don't cover (three of the bosses, magic pickups, effects) are built in code. Sounds are synthesized. None of the original game's art, models, audio or levels are used.
 
 > Fan project. Not affiliated with or endorsed by the owners of the Gauntlet trademark.
 
@@ -41,11 +41,12 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
 
 
-- **Four classic heroes**, restyled after the arcade cast and each with its own stats and turbo attack:
-  - Warrior (red, horned helm, great axe): strong melee, whirlwind spin
-  - Valkyrie (blue, winged helm, sword and shield): heavy armor, shield dash
-  - Wizard (gold robe, pointed hat, long beard): strong magic, fire nova
-  - Archer (green hood, crossbow, quiver): speed and rapid fire, arrow volley
+- **Eight heroes**, each with its own stats and turbo attack:
+  - Warrior (long blond hair, bare-chested, red bracers, great axe): strong melee, whirlwind spin
+  - Valkyrie (red hair, winged golden helm, blue armour, sword and shield): heavy armor, shield dash
+  - Wizard (striped royal headdress, gold collar, long robe, staff): strong magic, fire nova
+  - Archer (elf in green, bow and quiver): speed and rapid fire, arrow volley
+  - Dwarf (horned helm, huge beard, hammer), Knight (full plate, great helm), Jester (motley and bells, throwing daggers) and Sorceress (purple robes, crystal staff), as in Dark Legacy
 - **Health drains over time**, as in the arcade. Eat food to survive, and don't shoot it!
 - **Melee and ranged combat.** Attacking next to an enemy swings your weapon; otherwise you throw your projectile.
 - **Turbo meter.** Fills as you deal damage. Hold Turbo and press Attack to spend it on your class's special move.

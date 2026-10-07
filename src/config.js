@@ -67,7 +67,34 @@ Object.assign(CLASSES, {
     blurb: 'Fierce and fast. Turbo: claw cyclone.',
   },
 });
-export const BASE_CLASSES = ['warrior', 'valkyrie', 'wizard', 'archer'];
+// Dark Legacy's four extra classes, available from the start.
+Object.assign(CLASSES, {
+  dwarf: {
+    name: 'Dwarf', color: '#c86a20', dark: '#5a2e0c', accent: '#b8bcc8',
+    hp: 950, speed: 112, strength: 25, armor: 0.25, magic: 0.9,
+    shotDmg: 11, shotSpeed: 330, shotCooldown: 0.42, shot: 'axe', turbo: 'spin',
+    blurb: 'Tough as stone. Turbo: hammer whirl.',
+  },
+  knight: {
+    name: 'Knight', color: '#b8bcd0', dark: '#4a4e60', accent: '#b01818',
+    hp: 900, speed: 122, strength: 22, armor: 0.32, magic: 1.0,
+    shotDmg: 10, shotSpeed: 380, shotCooldown: 0.34, shot: 'sword', turbo: 'dash',
+    blurb: 'Clad in plate. Turbo: shield charge.',
+  },
+  jester: {
+    name: 'Jester', color: '#9a3ad8', dark: '#3a1060', accent: '#f2c020',
+    hp: 720, speed: 158, strength: 12, armor: 0.08, magic: 1.4,
+    shotDmg: 7, shotSpeed: 500, shotCooldown: 0.18, shot: 'dagger', turbo: 'volley',
+    blurb: 'Quick and tricky. Turbo: dagger fan.',
+  },
+  sorceress: {
+    name: 'Sorceress', color: '#c040e0', dark: '#4a106a', accent: '#e8c040',
+    hp: 700, speed: 130, strength: 10, armor: 0.06, magic: 2.1,
+    shotDmg: 13, shotSpeed: 380, shotCooldown: 0.34, shot: 'spark', turbo: 'nova',
+    blurb: 'Mistress of magic. Turbo: arcane nova.',
+  },
+});
+export const BASE_CLASSES = ['warrior', 'valkyrie', 'wizard', 'archer', 'dwarf', 'knight', 'jester', 'sorceress'];
 export const CLASS_ORDER = [...BASE_CLASSES, 'minotaur', 'falconess', 'jackal', 'tigress'];
 
 export const ENEMIES = {

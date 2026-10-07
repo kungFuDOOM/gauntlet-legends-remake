@@ -73,7 +73,7 @@ test('saves round-trip and survive corrupt data', () => {
 test('secret heroes unlock from guardians and Rune Stones', async () => {
   const { unlockedClasses } = await import('../src/campaign.js');
   const s = newSave();
-  assert.deepEqual(unlockedClasses(s.progress), ['warrior', 'valkyrie', 'wizard', 'archer']);
+  assert.deepEqual(unlockedClasses(s.progress), ['warrior', 'valkyrie', 'wizard', 'archer', 'dwarf', 'knight', 'jester', 'sorceress']);
   completeLevel(s.progress, 4, ['guardian']);
   assert.ok(unlockedClasses(s.progress).includes('minotaur'));
   assert.ok(!unlockedClasses(s.progress).includes('tigress'));

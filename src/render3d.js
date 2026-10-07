@@ -26,6 +26,10 @@ const HERO_STYLE = {
   valkyrie: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: 'Dodge_Forward', meleeSpeed: 2.2, shootSpeed: 2.6 },
   wizard: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: 'Spellcast_Shoot', turbo: 'Spellcast_Long', meleeSpeed: 2.2, shootSpeed: 2.6 },
   archer: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: '2H_Ranged_Shoot', turbo: '2H_Ranged_Shoot', meleeSpeed: 2.4, shootSpeed: 3.2 },
+  dwarf: { idle: '2H_Melee_Idle', melee: '2H_Melee_Attack_Chop', shoot: 'Throw', turbo: '2H_Melee_Attack_Spinning', meleeSpeed: 2.1, shootSpeed: 2.3 },
+  knight: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: 'Dodge_Forward', meleeSpeed: 2.2, shootSpeed: 2.5 },
+  jester: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: 'Throw', turbo: 'Throw', meleeSpeed: 2.6, shootSpeed: 3.2 },
+  sorceress: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: 'Spellcast_Shoot', turbo: 'Spellcast_Long', meleeSpeed: 2.2, shootSpeed: 2.6 },
   minotaur: { idle: '2H_Melee_Idle', melee: '2H_Melee_Attack_Chop', shoot: 'Throw', turbo: '2H_Melee_Attack_Spinning', meleeSpeed: 2, shootSpeed: 2.2 },
   falconess: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: '2H_Ranged_Shoot', turbo: '2H_Ranged_Shoot', meleeSpeed: 2.4, shootSpeed: 3.3 },
   jackal: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: 'Dodge_Forward', meleeSpeed: 2.3, shootSpeed: 2.6 },
@@ -824,7 +828,7 @@ export class Renderer3D {
     v.root.position.set(pr.x, 18, pr.y);
     if (pr.super) v.root.scale.setScalar(2);
     const ang = Math.atan2(pr.vx, pr.vy);
-    if (pr.kind === 'axe' || pr.kind === 'sword') { v.root.rotation.y = ang; v.spin.rotation.y = pr.spin; }
+    if (pr.kind === 'axe' || pr.kind === 'sword' || pr.kind === 'dagger') { v.root.rotation.y = ang; v.spin.rotation.y = pr.spin; }
     else if (pr.kind === 'arrow') v.root.rotation.y = ang;
     else v.spin.rotation.set(t * 9, t * 7, 0);
   }
