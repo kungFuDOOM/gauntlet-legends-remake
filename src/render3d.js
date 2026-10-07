@@ -11,7 +11,9 @@ import { capTexture, crackedTexture, grassTexture, lavaTexture, glowTexture, glo
 const WALL_H = 52;
 const CAM_OFFSET = new THREE.Vector3(0, 380, 240);
 const MAX_PARTICLES = 900;
-const TORCH_LIGHTS = 8;
+// Phones get fewer dynamic lights; each one costs on every pixel.
+const LOW_POWER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+const TORCH_LIGHTS = LOW_POWER ? 4 : 8;
 const S = MODEL_SCALE;
 
 function hash(x, y) {

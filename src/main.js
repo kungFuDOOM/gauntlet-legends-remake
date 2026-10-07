@@ -4,6 +4,7 @@
 
 import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
+import { TouchControls } from './touch.js';
 import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
@@ -34,6 +35,14 @@ try {
 } catch { /* storage unavailable */ }
 
 const input = new Input();
+input.touch = new TouchControls({
+  onFirstTouch: () => {
+    initAudio(); // phones only allow sound to start from a touch
+    const el = document.documentElement;
+    if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+  },
+  onMute: () => { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; },
+});
 let game = null;
 let state = 'loading';
 let loadProgress = 0;

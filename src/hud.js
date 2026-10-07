@@ -112,6 +112,7 @@ function drawPanel(ctx, g, slot) {
   const { x, y } = panelPos(slot);
   if (!p) {
     if (slot >= 2 && !g.players[slot - 2] && !g.players[slot === 2 ? 1 : 0]) return;
+    if (slot >= 2 && document.body.classList.contains('touching')) return; // under the touch controls
     ctx.globalAlpha = 0.55 + Math.sin(g.time * 4) * 0.25;
     frame(ctx, x, y + PANEL_H - 30, PANEL_W, 30, '#888');
     ctx.font = `bold 12px ${SANS}`;

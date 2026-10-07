@@ -1,4 +1,4 @@
-// Keyboard + gamepad input. Every device is an "input source" a player can claim.
+// Keyboard, gamepad and touch input. Every device is an "input source" a player can claim.
 
 const KB_SCHEMES = {
   kb1: {
@@ -34,6 +34,7 @@ export class Input {
 
   static label(id) {
     if (KB_SCHEMES[id]) return KB_SCHEMES[id].label;
+    if (id === 'touch') return 'Touch screen';
     return `Gamepad ${Number(id.slice(3)) + 1}`;
   }
 
@@ -59,6 +60,8 @@ export class Input {
         start: b(9),
       };
     }
+
+    if (this.touch && this.touch.active) raw.touch = this.touch.raw();
 
     const state = {};
     for (const [id, r] of Object.entries(raw)) {

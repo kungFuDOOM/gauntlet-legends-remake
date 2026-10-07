@@ -16,6 +16,22 @@ npm start          # serves the game at http://localhost:8080
 
 Any static file server works too, e.g. `python3 -m http.server`. The game uses ES modules, so opening `index.html` straight from disk won't work. You need a browser with WebGL; any recent desktop browser has it. Because it is fully static, it can also be hosted on GitHub Pages.
 
+## Play on your phone
+
+The game has on-screen touch controls that appear automatically on phones and tablets: drag anywhere on the **left half** of the screen to move, and use the **Attack**, **Magic** and **Turbo** buttons on the right (Turbo fires your turbo attack on its own). The top-right buttons pause and toggle sound. Hold the phone sideways.
+
+Tip: use your browser's **Add to Home Screen** to launch it full-screen like an app.
+
+## Host it for free (GitHub Pages)
+
+The game is plain static files, so GitHub Pages can host it as-is:
+
+1. GitHub Pages is free for **public** repositories: *Settings → General → Danger Zone → Change visibility → Public*.
+2. *Settings → Pages*: set **Source** to *Deploy from a branch*, pick the branch with the game and the **/ (root)** folder, and save.
+3. After a minute or two the game is live at `https://<your-username>.github.io/<repo-name>/`.
+
+To keep the repository private instead, connect it to a free static host such as Cloudflare Pages or Netlify (no build command; output directory is the repository root).
+
 ## Controls
 
 | | Move | Attack | Magic potion | Turbo (hold + attack) |
