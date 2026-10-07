@@ -3,6 +3,7 @@
 import { VIEW_W, VIEW_H, CLASSES, CLASS_ORDER, POWERUPS, TURBO_COST, MAX_PLAYERS, TILE, xpForLevel } from './config.js';
 import { T } from './level.js';
 import { Input } from './input.js';
+import { SHOP, priceOf } from './campaign.js';
 
 const SERIF = 'Georgia, "Times New Roman", serif';
 const SANS = '"Trebuchet MS", Verdana, sans-serif';
@@ -86,6 +87,7 @@ export function drawGameOverlay(ctx, g, r3d, opts) {
   }
 
   drawBossBar(ctx, g);
+  if (!g.boss && opts.runes != null) drawRuneCount(ctx, opts.runes);
   drawBanner(ctx, g);
   for (let s = 0; s < MAX_PLAYERS; s++) drawPanel(ctx, g, s);
   if (opts.minimap) drawMinimap(ctx, g);
@@ -146,9 +148,9 @@ function drawPanel(ctx, g, slot) {
   // score
   ctx.textAlign = 'right';
   ctx.font = `bold 9px ${SANS}`;
-  outlined(ctx, 'SCORE', x + PANEL_W - 12, y + 22, '#c8b88a', '#000', 2);
+  outlined(ctx, 'GOLD', x + PANEL_W - 12, y + 22, '#c8b88a', '#000', 2);
   ctx.font = `bold 13px ${SANS}`;
-  outlined(ctx, String(p.score), x + PANEL_W - 12, y + 36, '#ffe070', '#000', 3);
+  outlined(ctx, String(p.gold), x + PANEL_W - 12, y + 36, '#ffe070', '#000', 3);
 
   // inventory: keys and potions
   let ix = x + 136;
@@ -299,7 +301,7 @@ export function titleShowcase(time) {
   return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 440, scale: 1.6, turn: Math.sin(time * 0.7 + i) * 0.35 }));
 }
 
-export function drawTitle(ctx, time, hiscores) {
+export function drawTitle(ctx, time, hiscores, progress = null) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   const vg = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 200, VIEW_W / 2, VIEW_H / 2, 620);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)');
@@ -326,7 +328,11 @@ export function drawTitle(ctx, time, hiscores) {
 
   if (Math.floor(time * 2) % 2) {
     ctx.font = `bold 24px ${SANS}`;
-    outlined(ctx, 'PRESS ATTACK TO START', VIEW_W / 2, 508, '#ffffff', '#000', 5);
+    outlined(ctx, progress ? 'PRESS ATTACK TO CONTINUE YOUR QUEST' : 'PRESS ATTACK TO START', VIEW_W / 2, 498, '#ffffff', '#000', 5);
+  }
+  if (progress) {
+    ctx.font = `bold 13px ${SANS}`;
+    outlined(ctx, `Rune Stones: ${Object.keys(progress.runes).length} / 16   ·   Magic: begin a new quest`, VIEW_W / 2, 519, '#ffd890', '#000', 3);
   }
   ctx.font = `12px ${SANS}`;
   const lines = [
@@ -335,11 +341,11 @@ export function drawTitle(ctx, time, hiscores) {
     'Gamepads: stick move · A attack · B magic · hold X/RB + A = turbo · up to 4 players',
     'P pause · M mute · V announcer · X pixel size · TAB map',
   ];
-  lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 532 + i * 17, '#e0d4b8', '#000', 3));
+  lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 540 + i * 17, '#e0d4b8', '#000', 3));
   if (hiscores.length) {
     ctx.font = `bold 12px ${SANS}`;
     const h = hiscores[0];
-    outlined(ctx, `HIGH SCORE  ${h.score}  ${h.name.toUpperCase()}  (LEVEL ${h.level})`, VIEW_W / 2, 618, '#ffd040', '#000', 3);
+    outlined(ctx, `HIGH SCORE  ${h.score}  ${h.name.toUpperCase()}  (LEVEL ${h.level})`, VIEW_W / 2, 624, '#ffd040', '#000', 3);
   }
 }
 
@@ -355,7 +361,7 @@ export function selectShowcase(slots, time) {
   return out;
 }
 
-export function drawSelect(ctx, time, slots, countdown) {
+export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -386,6 +392,8 @@ export function drawSelect(ctx, time, slots, countdown) {
     }
     ctx.font = `11px ${SANS}`;
     outlined(ctx, Input.label(slot.source), x + SEL_W / 2, y + 42, '#b8a888', '#000', 2);
+    const saved = heroes[slot.cls];
+    if (saved) { ctx.font = `bold 12px ${SANS}`; outlined(ctx, `SAVED HERO · LEVEL ${saved.lvl} · ${saved.gold} GOLD`, x + SEL_W / 2, y + 60, '#ffd860', '#000', 3); }
     ctx.font = `bold 26px ${SERIF}`;
     outlined(ctx, `◀ ${def.name.toUpperCase()} ▶`, x + SEL_W / 2, y + 306, def.color, '#000', 5);
     ctx.font = `12px ${SANS}`;
@@ -425,4 +433,256 @@ export function drawOverlay(ctx, title, lines, accent = '#f2c14e') {
   outlined(ctx, title, VIEW_W / 2, 230, accent, '#000', 7);
   ctx.font = `17px ${SANS}`;
   lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 284 + i * 28, '#f0e6d0', '#000', 3));
+}
+
+// ---------- quest screens ----------
+
+function drawRuneIcon(ctx, x, y, size, lit) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = lit ? '#7a6aa0' : '#3a3440';
+  ctx.strokeStyle = lit ? '#ffb0ff' : '#5a5060';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-size * 0.4, -size * 0.5); ctx.lineTo(size * 0.4, -size * 0.55); ctx.lineTo(size * 0.45, size * 0.5); ctx.lineTo(-size * 0.45, size * 0.5);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = lit ? '#ffe0ff' : '#6a6070';
+  ctx.beginPath(); ctx.moveTo(-size * 0.15, -size * 0.3); ctx.lineTo(size * 0.15, 0); ctx.lineTo(-size * 0.15, size * 0.3); ctx.stroke();
+  ctx.restore();
+}
+
+function drawRuneCount(ctx, n) {
+  const x = VIEW_W / 2;
+  ctx.fillStyle = 'rgba(10,8,6,0.6)';
+  roundRect(ctx, x - 62, 10, 124, 26, 8);
+  ctx.fill();
+  drawRuneIcon(ctx, x - 44, 23, 16, true);
+  ctx.font = `bold 13px ${SANS}`;
+  ctx.textAlign = 'left';
+  outlined(ctx, `RUNES ${n}/16`, x - 30, 28, '#ffd0ff', '#000', 3);
+}
+
+// Heroes standing along the bottom of the menu screens.
+export function partyShowcase(g, time, cheer = false, wide = false) {
+  if (!g) return [];
+  const ps = g.allPlayers();
+  return ps.map((p, i) => ({
+    cls: p.cls, sx: VIEW_W / 2 + (i - (ps.length - 1) / 2) * (wide ? 170 : 120), sy: wide ? 470 : 612, scale: wide ? 1.5 : 0.95,
+    turn: Math.sin(time * 0.8 + i) * 0.3, cheer,
+  }));
+}
+
+export function storyShowcase(time, g) {
+  if (g) return partyShowcase(g, time, false, true);
+  return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 380, scale: 1.25, turn: Math.sin(time * 0.6 + i) * 0.4 }));
+}
+
+function wrap(ctx, text, maxW) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w;
+    if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+export function drawStory(ctx, story, time) {
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  const g = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  g.addColorStop(0, 'rgba(0,0,0,0.75)'); g.addColorStop(0.45, 'rgba(0,0,0,0.25)'); g.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  if (!story) return;
+  const line = story.lines[story.idx];
+  const shown = line.slice(0, Math.floor(story.t * 45));
+  frame(ctx, 90, 470, VIEW_W - 180, 130, '#f2c14e');
+  ctx.font = `italic 21px ${SERIF}`;
+  ctx.textAlign = 'center';
+  const rows = wrap(ctx, line, VIEW_W - 240);
+  // typewriter over the wrapped rows
+  let left = shown.length;
+  rows.forEach((r, i) => {
+    const part = r.slice(0, Math.max(0, left));
+    left -= r.length + 1;
+    outlined(ctx, part, VIEW_W / 2, 512 + i * 28, '#f4e8c8', '#000', 4);
+  });
+  ctx.font = `12px ${SANS}`;
+  outlined(ctx, `${story.idx + 1} / ${story.lines.length}     Attack: continue     Magic: skip`, VIEW_W / 2, 590, '#b8a888', '#000', 3);
+  ctx.font = `bold 34px ${SERIF}`;
+  const tg = ctx.createLinearGradient(0, 40, 0, 80);
+  tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
+  outlined(ctx, 'THE LEGEND', VIEW_W / 2, 72, tg, '#1a0a00', 6);
+}
+
+const REALM_NAMES = ['Mountain Kingdom', 'Castle Stronghold', 'Sky Dominion', 'Underworld'];
+const REALM_COLORS = ['#ffb24a', '#a8c0ff', '#e0f4ff', '#ff6a3a'];
+const STAGE_NAMES = [
+  ['Valley of Fire', 'Dagger Peak', 'Cliffs of Desolation', 'The Dragon'],
+  ['Castle Courtyard', 'Dungeon of Torment', 'Tower Armory', 'The Chimera'],
+  ['Poisonous Fields', 'Haunted Cemetery', 'Venomous Spire', 'The Plague Fiend'],
+  ['Gates of the Underworld', 'Lava Pits', 'Hall of Souls', 'Skorne'],
+];
+
+export function drawMap(ctx, time, progress, cursor, g) {
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.fillStyle = 'rgba(6,4,2,0.55)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.textAlign = 'center';
+  ctx.font = `bold 38px ${SERIF}`;
+  const tg = ctx.createLinearGradient(0, 30, 0, 70);
+  tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
+  outlined(ctx, 'THE REALMS', VIEW_W / 2, 60, tg, '#1a0a00', 6);
+  const runes = Object.keys(progress.runes).length;
+  const guardians = [4, 8, 12].filter((n) => progress.completed[n]).length;
+  ctx.font = `bold 14px ${SANS}`;
+  outlined(ctx, `Rune Stones ${runes} / 16     Guardians defeated ${guardians} / 3`, VIEW_W / 2, 86, '#ffd0ff', '#000', 3);
+
+  const cw = 214, gap = 12, x0 = (VIEW_W - (cw * 4 + gap * 3)) / 2, y0 = 104, ch = 372;
+  for (let r = 0; r < 4; r++) {
+    const x = x0 + r * (cw + gap);
+    const lockedRealm = r === 3 && guardians < 3;
+    const sel = cursor.realm === r;
+    frame(ctx, x, y0, cw, ch, sel ? REALM_COLORS[r] : '#5a4a30');
+    if (sel) { ctx.strokeStyle = REALM_COLORS[r]; ctx.lineWidth = 3; roundRect(ctx, x - 3, y0 - 3, cw + 6, ch + 6, 10); ctx.stroke(); ctx.lineWidth = 1; }
+    ctx.font = `italic bold 19px ${SERIF}`;
+    outlined(ctx, REALM_NAMES[r], x + cw / 2, y0 + 32, lockedRealm ? '#7a7060' : REALM_COLORS[r], '#000', 4);
+    for (let s = 1; s <= 4; s++) {
+      const n = r * 4 + s;
+      const sy = y0 + 54 + (s - 1) * 76;
+      const open = !lockedRealm && (s === 1 || progress.completed[n - 1]);
+      const done = !!progress.completed[n];
+      const here = sel && cursor.stage === s;
+      ctx.fillStyle = here ? 'rgba(255,220,140,0.22)' : 'rgba(0,0,0,0.35)';
+      roundRect(ctx, x + 10, sy, cw - 20, 66, 6);
+      ctx.fill();
+      if (here) { ctx.strokeStyle = '#ffe080'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
+      ctx.textAlign = 'left';
+      ctx.font = `bold 10px ${SANS}`;
+      outlined(ctx, s === 4 ? 'GUARDIAN' : `STAGE ${s}`, x + 20, sy + 18, s === 4 ? '#ff9a7a' : '#c8b88a', '#000', 2);
+      const label = open ? STAGE_NAMES[r][s - 1] : '? ? ?';
+      let fs = 14;
+      ctx.font = `bold ${fs}px ${SANS}`;
+      while (fs > 10 && ctx.measureText(label).width > cw - 74) { fs--; ctx.font = `bold ${fs}px ${SANS}`; }
+      outlined(ctx, label, x + 20, sy + 38, open ? '#f4ead0' : '#6a6050', '#000', 3);
+      ctx.font = `11px ${SANS}`;
+      outlined(ctx, done ? 'Cleared' : open ? 'Open' : 'Locked', x + 20, sy + 56, done ? '#80e080' : open ? '#ffe080' : '#8a7060', '#000', 2);
+      // rune slot for this stage
+      const key = s === 4 ? `g${n}` : `h${n}`;
+      drawRuneIcon(ctx, x + cw - 34, sy + 33, 20, !!progress.runes[key]);
+      ctx.textAlign = 'center';
+    }
+    if (lockedRealm) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      roundRect(ctx, x + 4, y0 + 44, cw - 8, ch - 50, 6);
+      ctx.fill();
+      ctx.font = `bold 15px ${SANS}`;
+      outlined(ctx, 'SEALED', x + cw / 2, y0 + ch / 2, '#ff8060', '#000', 4);
+      ctx.font = `12px ${SANS}`;
+      outlined(ctx, 'Defeat the three guardians', x + cw / 2, y0 + ch / 2 + 22, '#e0d0b0', '#000', 3);
+    }
+  }
+  ctx.textAlign = 'center';
+  ctx.font = `13px ${SANS}`;
+  outlined(ctx, 'Arrows / stick: choose     Attack: enter     Magic: save & quit to title     Others press Attack to join', VIEW_W / 2, 500, '#e0d4b8', '#000', 3);
+  if (g) {
+    ctx.font = `bold 12px ${SANS}`;
+    const ps = g.allPlayers();
+    ps.forEach((p, i) => {
+      const sx = VIEW_W / 2 + (i - (ps.length - 1) / 2) * 120;
+      outlined(ctx, `${p.name.toUpperCase()} LV${p.lvl}`, sx, 528, p.def.color, '#000', 3);
+    });
+  }
+}
+
+const SHOP_W = 222, SHOP_GAP = 10, SHOP_X0 = (VIEW_W - (SHOP_W * 4 + SHOP_GAP * 3)) / 2;
+
+export function drawShop(ctx, time, g, cursors) {
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.fillStyle = 'rgba(6,4,2,0.5)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.textAlign = 'center';
+  ctx.font = `bold 36px ${SERIF}`;
+  const tg = ctx.createLinearGradient(0, 30, 0, 70);
+  tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
+  outlined(ctx, "THE MERCHANT'S STALL", VIEW_W / 2, 56, tg, '#1a0a00', 6);
+  ctx.font = `13px ${SANS}`;
+  outlined(ctx, 'Up/Down: browse   Attack: buy   Magic: done   (everyone must finish)', VIEW_W / 2, 80, '#e0d4b8', '#000', 3);
+  const ps = g.allPlayers();
+  const n = ps.length;
+  const x0 = (VIEW_W - (SHOP_W * n + SHOP_GAP * (n - 1))) / 2;
+  ps.forEach((p, i) => {
+    const c = cursors[p.slot] || { idx: 0 };
+    const x = x0 + i * (SHOP_W + SHOP_GAP), y = 96;
+    frame(ctx, x, y, SHOP_W, 410, p.def.color);
+    ctx.font = `italic bold 17px ${SERIF}`;
+    outlined(ctx, `${p.name.toUpperCase()}  LV${p.lvl}`, x + SHOP_W / 2, y + 26, p.def.color, '#000', 4);
+    ctx.font = `bold 16px ${SANS}`;
+    outlined(ctx, `${p.gold} GOLD`, x + SHOP_W / 2, y + 48, c.deny > 0 ? '#ff5040' : '#ffd860', '#000', 3);
+    SHOP.forEach((item, k) => {
+      const iy = y + 62 + k * 40;
+      const here = c.idx === k && !c.done;
+      const cost = priceOf(p, item);
+      const afford = item.id === 'done' || p.gold >= cost;
+      ctx.fillStyle = here ? 'rgba(255,220,140,0.25)' : 'rgba(0,0,0,0.3)';
+      roundRect(ctx, x + 10, iy, SHOP_W - 20, 34, 5);
+      ctx.fill();
+      if (here) { ctx.strokeStyle = '#ffe080'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
+      ctx.textAlign = 'left';
+      ctx.font = `bold 13px ${SANS}`;
+      outlined(ctx, item.name, x + 18, iy + 15, afford ? '#f4ead0' : '#8a7a68', '#000', 3);
+      ctx.font = `10px ${SANS}`;
+      outlined(ctx, item.desc, x + 18, iy + 28, '#b8a888', '#000', 2);
+      if (item.price) {
+        ctx.textAlign = 'right';
+        ctx.font = `bold 12px ${SANS}`;
+        outlined(ctx, `${cost}g`, x + SHOP_W - 18, iy + 21, afford ? '#ffd860' : '#8a6a40', '#000', 3);
+      }
+      ctx.textAlign = 'center';
+    });
+    ctx.font = `11px ${SANS}`;
+    outlined(ctx, `STR ${Math.round(p.strength)}  ARM ${Math.round(p.armor * 100)}  SPD ${Math.round(p.speed)}  MAG ${p.magic.toFixed(1)}`, x + SHOP_W / 2, y + 400, '#d8c8a8', '#000', 2);
+    if (c.done) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      roundRect(ctx, x + 6, y + 56, SHOP_W - 12, 330, 6);
+      ctx.fill();
+      ctx.font = `bold 22px ${SANS}`;
+      outlined(ctx, 'READY!', x + SHOP_W / 2, y + 220, '#80ff80', '#000', 4);
+    }
+    if (c.deny > 0) c.deny -= 0.016;
+  });
+}
+
+export function drawEnding(ctx, time, g, progress) {
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.textAlign = 'center';
+  ctx.font = `bold 64px ${SERIF}`;
+  const tg = ctx.createLinearGradient(0, 60, 0, 130);
+  tg.addColorStop(0, '#fff6c8'); tg.addColorStop(0.5, '#f2c14e'); tg.addColorStop(1, '#8a4a10');
+  ctx.shadowColor = 'rgba(255,180,60,0.7)';
+  ctx.shadowBlur = 30;
+  outlined(ctx, 'VICTORY', VIEW_W / 2, 120, tg, '#1a0a00', 8);
+  ctx.shadowBlur = 0;
+  ctx.font = `italic 20px ${SERIF}`;
+  outlined(ctx, 'Skorne is sealed away, and the realms are free.', VIEW_W / 2, 160, '#f4e8c8', '#000', 4);
+  ctx.font = `bold 15px ${SANS}`;
+  outlined(ctx, `Rune Stones recovered: ${Object.keys(progress.runes).length} / 16`, VIEW_W / 2, 192, '#ffd0ff', '#000', 3);
+  if (g) {
+    const ps = g.allPlayers();
+    ps.forEach((p, i) => {
+      const sx = VIEW_W / 2 + (i - (ps.length - 1) / 2) * 170;
+      ctx.font = `bold 15px ${SANS}`;
+      outlined(ctx, `${p.name.toUpperCase()}`, sx, 520, p.def.color, '#000', 4);
+      ctx.font = `12px ${SANS}`;
+      outlined(ctx, `Level ${p.lvl} · ${p.score} pts`, sx, 538, '#e0d4b8', '#000', 3);
+    });
+  }
+  if (time > 3 && Math.floor(time * 2) % 2) {
+    ctx.font = `bold 18px ${SANS}`;
+    outlined(ctx, 'Press Attack', VIEW_W / 2, 600, '#fff', '#000', 4);
+  }
 }

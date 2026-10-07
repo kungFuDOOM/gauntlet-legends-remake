@@ -21,7 +21,8 @@ export class Game {
 
   // ---------- setup ----------
 
-  addPlayer(slot, source, cls) {
+  // `saved` restores a hero's level, stats and gold from a previous session.
+  addPlayer(slot, source, cls, saved = null) {
     const def = CLASSES[cls];
     const p = {
       kind: 'player', slot, source, cls, def, name: def.name, color: def.color,
@@ -29,15 +30,26 @@ export class Game {
       hp: def.hp, score: 0, keys: 0, potions: 1, xp: 0, lvl: 1,
       strength: def.strength, shotDmg: def.shotDmg, armor: def.armor, speed: def.speed, magic: def.magic,
       shotCd: 0, turbo: 50, buffs: {}, hurtFlash: 0, invuln: 0, dash: null, swing: 0, walk: 0, throwT: 0,
-      warnT: 0, deadT: 0, drain: 0,
+      warnT: 0, deadT: 0, drain: 0, gold: 0,
     };
+    if (saved) {
+      for (const k of ['lvl', 'xp', 'strength', 'shotDmg', 'armor', 'speed', 'magic', 'gold', 'potions']) if (typeof saved[k] === 'number') p[k] = saved[k];
+      p.maxHp = def.hp + (p.lvl - 1) * 40;
+      p.hp = p.maxHp;
+    }
     this.players[slot] = p;
     return p;
   }
 
+  // The parts of a hero worth keeping between sessions.
+  heroSave(p) {
+    const { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions } = p;
+    return { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions };
+  }
+
   // Drop-in mid game: spawn next to the other players.
-  joinMidGame(slot, source, cls) {
-    const p = this.addPlayer(slot, source, cls);
+  joinMidGame(slot, source, cls, saved = null) {
+    const p = this.addPlayer(slot, source, cls, saved);
     const anchor = this.livePlayers()[0];
     const pos = anchor ? this.findOpenSpotNear(anchor.x, anchor.y) : this.spawnPoint(slot);
     p.x = pos.x; p.y = pos.y;
@@ -61,6 +73,7 @@ export class Game {
     this.enemies = []; this.gens = []; this.projs = []; this.items = []; this.particles = []; this.texts = [];
     this.flash = 0; this.shake = 0; this.exitReached = false; this.boss = null;
     this.flowT = 0; this.exploreT = 0; this.time = 0;
+    this.crackHp = new Map(); this.runesFound = [];
     this.banner = { text: L.info.stageName, sub: L.info.theme.name, t: 3.5 };
 
     const c = (tx) => tx * TILE + TILE / 2;
@@ -132,13 +145,37 @@ export class Game {
   // into lava, while heroes may wade through it and burn.
   solid(tx, ty, avoidLava = false) {
     const t = this.tile(tx, ty);
-    return t === T.WALL || t === T.DOOR || t === T.SEALED || t === T.VOID || (avoidLava && t === T.LAVA);
+    return t === T.WALL || t === T.DOOR || t === T.SEALED || t === T.VOID || t === T.CRACKED || (avoidLava && t === T.LAVA);
   }
 
   blocksShots(tx, ty) {
     const t = this.tile(tx, ty);
-    return t === T.WALL || t === T.DOOR || t === T.SEALED;
+    return t === T.WALL || t === T.DOOR || t === T.SEALED || t === T.CRACKED;
   }
+
+  // Cracked walls crumble after a few hits and reveal a secret room.
+  damageCracked(tx, ty, amount) {
+    if (this.tile(tx, ty) !== T.CRACKED) return false;
+    const i = ty * this.w + tx;
+    const hp = (this.crackHp.get(i) ?? 40) - amount;
+    this.crackHp.set(i, hp);
+    const cx = tx * TILE + 16, cy = ty * TILE + 16;
+    this.burst(cx, cy, '#a89070', 5, 90);
+    sfx.hit();
+    if (hp <= 0) {
+      this.tiles[i] = T.FLOOR;
+      this.burst(cx, cy, '#a89070', 30, 200);
+      this.shake = 8;
+      sfx.door();
+      this.text(cx, cy - 20, 'SECRET!', '#ffe070', 2);
+      say('You found a secret area', 'secret', 4000);
+      this.updateFlow();
+    }
+    return true;
+  }
+
+  spikeCycle() { return Math.floor(this.time / 2.6); }
+  spikesUp() { return this.time % 2.6 < 0.8; }
 
   collides(x, y, r, avoidLava = false) {
     const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
@@ -322,6 +359,13 @@ export class Game {
       if (blocked && p.keys > 0) this.tryOpenDoor(p, mx, my);
     }
 
+    // Spike traps stab anyone standing on them while they're up (once per cycle)
+    if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.SPIKES && this.spikesUp() && p.spikeHit !== this.spikeCycle()) {
+      p.spikeHit = this.spikeCycle();
+      this.hurtPlayer(p, 40, null);
+      if (!p.alive) return;
+    }
+
     // Lava burns anyone wading through it
     if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.LAVA && !p.dash && p.invuln <= 0 && !p.buffs.shield) {
       p.burn = (p.burn || 0) + 45 * dt;
@@ -418,6 +462,15 @@ export class Game {
     for (const g of this.gens) {
       const dx = g.x - p.x, dy = g.y - p.y, d = Math.hypot(dx, dy);
       if (d < reach + g.r && (dx * p.fx + dy * p.fy) / (d || 1) > 0.3) targets.push(g);
+    }
+    const ftx = Math.floor((p.x + p.fx * (p.r + 14)) / TILE), fty = Math.floor((p.y + p.fy * (p.r + 14)) / TILE);
+    if (!targets.length && this.tile(ftx, fty) === T.CRACKED) {
+      p.swing = 0.18;
+      p.act = { type: 'melee', t: this.time };
+      p.shotCd = cd * 1.1;
+      sfx.melee();
+      this.damageCracked(ftx, fty, p.strength);
+      return;
     }
     if (targets.length) {
       p.swing = 0.18;
@@ -779,6 +832,7 @@ export class Game {
     pr.spin = (pr.spin || 0) + dt * 20;
     if (this.blocksShots(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))) {
       pr.dead = true;
+      if (pr.owner === 'player') this.damageCracked(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE), pr.dmg);
       this.burst(pr.x - pr.vx * dt, pr.y - pr.vy * dt, pr.owner === 'player' ? '#ddd' : '#ff8040', 4, 60);
       return;
     }
@@ -865,11 +919,21 @@ export class Game {
       case 'food':
         p.hp += FOOD_HEAL; sfx.food(); this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
       case 'gold':
-        p.score += 100; sfx.gold(); this.text(it.x, it.y - 10, '+100', '#ffe070'); return true;
+        p.score += 100; p.gold += 50; sfx.gold(); this.text(it.x, it.y - 10, '+50 GOLD', '#ffe070'); return true;
       case 'gem':
-        p.score += 500; sfx.gold(); this.text(it.x, it.y - 10, '+500', '#80e0ff'); return true;
-      case 'rune':
-        p.score += 5000; sfx.powerup(); this.text(it.x, it.y - 10, 'RUNE STONE +5000', '#ffb0ff', 2); return true;
+        p.score += 500; p.gold += 200; sfx.gold(); this.text(it.x, it.y - 10, '+200 GOLD', '#80e0ff'); return true;
+      case 'rune': {
+        const guardian = it.sub !== 'hidden';
+        p.score += guardian ? 5000 : 2500;
+        p.gold += guardian ? 500 : 300;
+        this.runesFound.push(guardian ? 'guardian' : 'hidden');
+        sfx.powerup(); sfx.levelup();
+        this.flash = 0.6;
+        this.text(it.x, it.y - 10, 'RUNE STONE!', '#ffb0ff', 2.5);
+        this.banner = { text: 'Rune Stone recovered!', sub: guardian ? 'The guardian has fallen' : 'A hidden stone, found at last', t: 3 };
+        say(`${p.name} has found a Rune Stone!`, 'rune', 3000);
+        return true;
+      }
       case 'key':
         if (p.keys >= MAX_KEYS) return false;
         p.keys++; sfx.key(); this.text(it.x, it.y - 10, 'KEY', '#ffe070'); return true;

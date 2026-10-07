@@ -69,3 +69,21 @@ test('spawned things sit on walkable floor', () => {
     }
   }
 });
+
+test('every level hides exactly one Rune Stone, and secret rooms open only by breaking the cracked wall', () => {
+  for (let n = 1; n <= 16; n++) {
+    if (levelInfo(n).isBoss) continue;
+    const L = generateLevel(n);
+    const runes = L.items.filter((i) => i.type === 'rune');
+    assert.equal(runes.length, 1, `level ${n} rune count`);
+    const r = runes[0];
+    assert.equal(L.tiles[r.y * L.w + r.x], T.FLOOR);
+    if (!L.secret) continue;
+    const open = (t) => t === T.FLOOR || t === T.EXIT || t === T.BRIDGE || t === T.SPIKES || t === T.DOOR;
+    const before = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], open);
+    const after = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], (t) => open(t) || t === T.CRACKED);
+    const i = r.y * L.w + r.x;
+    assert.equal(before[i], -1, `level ${n}: the secret rune must be sealed off`);
+    assert.ok(after[i] >= 0, `level ${n}: breaking the wall must open the way`);
+  }
+});

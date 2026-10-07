@@ -102,6 +102,29 @@ export function capTexture(base) {
   });
 }
 
+// Stone block with obvious cracks: the tell for a breakable wall hiding a secret.
+export function crackedTexture(base) {
+  return canvasTex(128, (ctx, s) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) ctx.fillRect(c * 64 + (r % 2) * 32 + 2, r * 32 + 2, 60, 28);
+    ctx.strokeStyle = 'rgba(10,6,2,0.85)';
+    ctx.lineWidth = 3;
+    for (let k = 0; k < 3; k++) {
+      ctx.beginPath();
+      let x = 20 + Math.random() * 88, y = 0;
+      ctx.moveTo(x, y);
+      while (y < s) { x += (Math.random() - 0.5) * 30; y += 10 + Math.random() * 14; ctx.lineTo(x, y); if (Math.random() < 0.3) { ctx.moveTo(x, y); } }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,240,200,0.25)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(2, 2, s - 4, s - 4);
+    noise(ctx, s, 26);
+  });
+}
+
 let grassTex = null;
 export function grassTexture() {
   if (grassTex) return grassTex;

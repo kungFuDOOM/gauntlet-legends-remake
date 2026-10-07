@@ -28,13 +28,22 @@ Any static file server works too, e.g. `python3 -m http.server`. The game uses E
 
 Up to **4 players** can play co-op on one screen. Press Attack on any unused keyboard or gamepad to join, even in the middle of a level.
 
-## Features
+## The quest
 
-- **Four classic heroes**, each with its own stats and turbo attack:
-  - Warrior: strong melee, whirlwind spin
-  - Valkyrie: heavy armor, shield dash
-  - Wizard: strong magic, fire nova
-  - Archer: speed and rapid fire, arrow volley
+The demon lord Skorne has broken free of the seal that bound him, and the Rune Stones that held him are scattered across the realms. You play through the same structure as the arcade original:
+
+- **Story:** an intro, read aloud by the announcer, explains the quest. Each realm gets its own introduction, and there is an ending once Skorne falls. The text is original, written for this remake.
+- **Realm map:** choose where to go. Stages in a realm open one after another, ending with its **guardian** (the Dragon, the Chimera, the Plague Fiend). The **Underworld** stays sealed until all three guardians are defeated; Skorne waits at its end.
+- **Rune Stones:** each guardian carries one, and every level hides another in a **secret room behind a cracked wall**. Smash the wall to get in. There are 16 in all.
+- **Gold and the merchant:** treasure gives gold. After each level the party visits the merchant's stall to buy food, magic potions, keys and permanent **Strength / Armor / Speed / Magic** upgrades. Each player shops with their own gold.
+- **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
+
+
+- **Four classic heroes**, restyled after the arcade cast and each with its own stats and turbo attack:
+  - Warrior (red, horned helm, great axe): strong melee, whirlwind spin
+  - Valkyrie (blue, winged helm, sword and shield): heavy armor, shield dash
+  - Wizard (gold robe, pointed hat, long beard): strong magic, fire nova
+  - Archer (green hood, crossbow, quiver): speed and rapid fire, arrow volley
 - **Health drains over time**, as in the arcade. Eat food to survive, and don't shoot it!
 - **Melee and ranged combat.** Attacking next to an enemy swings your weapon; otherwise you throw your projectile.
 - **Turbo meter.** Fills as you deal damage. Hold Turbo and press Attack to spend it on your class's special move.
@@ -51,7 +60,7 @@ Up to **4 players** can play co-op on one screen. Press Attack on any unused key
   - **Underworld:** scorched caverns riddled with lava
 
   Each realm has 3 procedurally generated levels with the original's stage names (Valley of Fire, Castle Courtyard, ...), then a **boss fight** against the Dragon, the Chimera, the Plague Fiend or Skorne. Bosses breathe fire in every direction, charge and summon minions; defeating one earns a Rune Stone.
-- **Lava** burns heroes who wade through it (monsters won't go near it), **gates** block the trail until you find a key, and **treasure vaults** behind locked gates hold chests, gems and potions.
+- **Lava** burns heroes who wade through it (monsters won't go near it), **spike traps** stab anyone standing on them when they spring up, **gates** block the trail until you find a key, and **treasure vaults** behind locked gates hold chests, gems and potions.
 - **Pixel-art rendering:** the 3D view is drawn at a low resolution and scaled up with hard pixel edges for a retro look (press `X` to change it).
 - **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
@@ -63,7 +72,8 @@ Up to **4 players** can play co-op on one screen. Press Attack on any unused key
 index.html        canvas + module entry
 server.js         zero-dependency static server (npm start)
 src/main.js       game loop and state machine (title, hero select, play, pause, level clear, game over)
-src/game.js       simulation: players, enemies and their AI, generators, projectiles, pickups
+src/game.js       simulation: players, enemies and their AI, generators, projectiles, pickups, traps
+src/campaign.js   the quest: realm unlocking, Rune Stones, shop, saved heroes, story text
 src/level.js      procedural dungeon and boss arena generation (pure, testable)
 src/render3d.js   three.js renderer: builds level geometry from the tile map, lighting and shadows,
                   camera, and keeps a 3D model in sync with every entity

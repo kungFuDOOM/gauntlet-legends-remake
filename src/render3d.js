@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS } from './config.js';
 import { T } from './level.js';
 import { assets, Actor, cloneProp, MODEL_SCALE } from './assets.js';
-import { capTexture, grassTexture, lavaTexture, glowTexture, glowSprite, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
+import { capTexture, crackedTexture, grassTexture, lavaTexture, glowTexture, glowSprite, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
 
 const WALL_H = 52;
 const CAM_OFFSET = new THREE.Vector3(0, 380, 240);
@@ -315,6 +315,42 @@ export class Renderer3D {
       group.add(fl);
     }
 
+    // ---- cracked walls (secret rooms) and spike traps ----
+    this.cracked = new Map();
+    const crackH = style === 'castle' ? WALL_H : style === 'sky' ? 30 : 40;
+    const crackColor = style === 'castle' ? th.wallSide : th.rock;
+    const crackMat = new THREE.MeshStandardMaterial({ map: crackedTexture(crackColor), roughness: 1 });
+    this.spikes = [];
+    const spikeGeo = new THREE.ConeGeometry(2.2, 12, 5);
+    const spikeMat = new THREE.MeshStandardMaterial({ color: '#c8ccd4', metalness: 0.8, roughness: 0.3, flatShading: true });
+    const plateMat = new THREE.MeshStandardMaterial({ color: '#3a3a40', metalness: 0.5, roughness: 0.6 });
+    for (let ty = 0; ty < h; ty++)
+      for (let tx = 0; tx < w; tx++) {
+        const t = tileAt(tx, ty);
+        if (t === T.CRACKED) {
+          const m = new THREE.Mesh(new THREE.BoxGeometry(32, crackH, 32), crackMat);
+          m.position.set(tx * TILE + 16, crackH / 2, ty * TILE + 16);
+          group.add(m);
+          this.cracked.set(ty * w + tx, m);
+        } else if (t === T.SPIKES) {
+          const grp = new THREE.Group();
+          grp.position.set(tx * TILE + 16, 0, ty * TILE + 16);
+          const plate = new THREE.Mesh(new THREE.BoxGeometry(28, 1.6, 28), plateMat);
+          plate.position.y = 0.9;
+          grp.add(plate);
+          const pins = new THREE.Group();
+          for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+            const c = new THREE.Mesh(spikeGeo, spikeMat);
+            c.position.set((i - 1) * 8, 6, (j - 1) * 8);
+            pins.add(c);
+          }
+          pins.position.y = -12;
+          grp.add(pins);
+          group.add(grp);
+          this.spikes.push(pins);
+        }
+      }
+
     // ---- gates on door tiles; they sink into the floor when unlocked ----
     this.doors = new Map();
     for (let ty = 0; ty < h; ty++)
@@ -541,7 +577,7 @@ export class Renderer3D {
       case 'barrel': add('barrel', 0.75); break;
       default: {
         // gems, amulets and rune stones keep their bespoke glowing models
-        const m = buildItem(it.type, it.sub, it.sub && POWERUPS[it.sub].color);
+        const m = buildItem(it.type, it.sub, POWERUPS[it.sub] && POWERUPS[it.sub].color);
         m.scale.setScalar(1.2);
         root.add(m);
         this.blob(root, 22);
@@ -802,6 +838,9 @@ export class Renderer3D {
     }
     this.exit.userData.disk.rotation.z = -t * 2.5;
     for (const tc of this.torches) if (tc.halo) tc.halo.scale.setScalar(44 * (1 + Math.sin(t * 17 + tc.x) * 0.1 + Math.sin(t * 29 + tc.z) * 0.06));
+    for (const [idx, m] of this.cracked) if (g.tiles[idx] !== T.CRACKED) { this.levelGroup.remove(m); this.cracked.delete(idx); }
+    const spikeY = g.spikesUp() ? 0 : -12;
+    for (const pins of this.spikes) pins.position.y += (spikeY - pins.position.y) * (spikeY > pins.position.y ? 0.6 : 0.15);
     for (const m of this.lavaMats) { m.map.offset.set(Math.sin(t * 0.3) * 0.08, t * 0.05); }
     for (const c of this.clouds) c.s.position.x = ((c.s.position.x + c.speed * 0.016) % (g.w * TILE + 400));
   }

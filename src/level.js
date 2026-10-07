@@ -8,7 +8,7 @@
 // Every style yields the same thing: a tile grid, "areas" (open spaces used for placing
 // things), key-locked gates, and a start/exit pair.
 
-export const T = { WALL: 0, FLOOR: 1, DOOR: 2, EXIT: 3, SEALED: 4, LAVA: 5, VOID: 6, BRIDGE: 7 };
+export const T = { WALL: 0, FLOOR: 1, DOOR: 2, EXIT: 3, SEALED: 4, LAVA: 5, VOID: 6, BRIDGE: 7, CRACKED: 8, SPIKES: 9 };
 export const GROUND = { DEFAULT: 0, GRASS: 1 };
 
 export const THEMES = [
@@ -97,7 +97,7 @@ export function bfs(tiles, w, h, sources, passable, parents = null) {
   return dist;
 }
 
-export const walkable = (t) => t === T.FLOOR || t === T.EXIT || t === T.BRIDGE;
+export const walkable = (t) => t === T.FLOOR || t === T.EXIT || t === T.BRIDGE || t === T.SPIKES;
 export const walkableOrDoor = (t) => walkable(t) || t === T.DOOR;
 
 function enemyWeights(n) {
@@ -514,6 +514,32 @@ function straightBridge(tiles, w, h, a, b) {
   return path;
 }
 
+// Carve a 3x3 room into solid rock (or open sky) beside an area, sealed by a cracked wall.
+function addSecret(tiles, w, h, areas, R) {
+  const solid = (i) => tiles[i] === T.WALL || tiles[i] === T.VOID;
+  for (let attempt = 0; attempt < 120 && areas.length; attempt++) {
+    const a = areas[Math.floor(R() * areas.length)];
+    const c = a.cells[Math.floor(R() * a.cells.length)];
+    if (tiles[c] !== T.FLOOR) continue;
+    const x = c % w, y = (c / w) | 0;
+    const [dx, dy] = DIRS4[Math.floor(R() * 4)];
+    const wx = x + dx, wy = y + dy;          // the cracked wall
+    const rx = x + dx * 3, ry = y + dy * 3;  // room centre
+    if (rx < 4 || ry < 4 || rx > w - 5 || ry > h - 5) continue;
+    let ok = solid(wy * w + wx);
+    for (let oy = -2; oy <= 2 && ok; oy++)
+      for (let ox = -2; ox <= 2; ox++) if (!solid((ry + oy) * w + rx + ox)) { ok = false; break; }
+    // the wall must sit flush against rock on both sides so the room has one way in
+    if (ok && !(solid((wy + dx) * w + wx + dy) && solid((wy - dx) * w + wx - dy))) ok = false;
+    if (!ok) continue;
+    const cells = [];
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) { const i = (ry + oy) * w + rx + ox; tiles[i] = T.FLOOR; cells.push(i); }
+    tiles[wy * w + wx] = T.CRACKED;
+    return { cells, wall: wy * w + wx };
+  }
+  return null;
+}
+
 // ---------- shared population: keys, exit, pickups, monsters ----------
 
 function populate(n, R, info, map) {
@@ -550,6 +576,26 @@ function populate(n, R, info, map) {
     return c;
   };
   const addItem = (type, c, sub) => { if (c != null) items.push({ type, x: c % w, y: (c / w) | 0, sub }); };
+
+  // Spike traps on the connecting paths (not in open areas, not near the start).
+  const inAreaEarly = new Set(areas.flatMap((a) => a.cells));
+  if (info.style !== 'sky') {
+    const cand = [];
+    for (let i = 0; i < w * h; i++) {
+      if (tiles[i] !== T.FLOOR || inAreaEarly.has(i)) continue;
+      const x = i % w, y = (i / w) | 0;
+      if (Math.abs(x - start.x) + Math.abs(y - start.y) < 10) continue;
+      cand.push(i);
+    }
+    const clusters = Math.min(2 + Math.floor(n / 2), 7);
+    for (let k = 0; k < clusters && cand.length; k++) {
+      const c = cand[Math.floor(R() * cand.length)];
+      for (const j of [c, c + 1, c + w, c + w + 1]) if (tiles[j] === T.FLOOR && !inAreaEarly.has(j)) tiles[j] = T.SPIKES;
+    }
+  }
+
+  // A secret room behind a cracked wall holds this level's hidden Rune Stone.
+  const secret = addSecret(tiles, w, h, areas.slice(1).filter((a) => !a.vault), R);
 
   // Exit goes in the open area farthest from the start (never a vault).
   const fullDist = bfs(tiles, w, h, [[start.x, start.y]], walkableOrDoor);
@@ -619,6 +665,13 @@ function populate(n, R, info, map) {
     for (let k = 0; k < 3; k++) addItem('gold', freeCellIn(v.cells));
   }
 
+  // the hidden Rune Stone: in the secret room, else a vault, else the farthest dead end
+  let runeCell = secret ? secret.cells[4] : null;
+  if (runeCell == null && vaults.length) runeCell = freeCellIn(vaults[0].cells);
+  if (runeCell == null) runeCell = freeCellIn(areas[areas.length - 1].cells);
+  if (runeCell != null) { occupied.add(runeCell); items.push({ type: 'rune', sub: 'hidden', x: runeCell % w, y: (runeCell / w) | 0 }); }
+  if (secret) for (let k = 0; k < 2; k++) addItem('gold', freeCellIn(secret.cells));
+
   const weights = enemyWeights(n);
   const generators = [];
   const genCount = Math.min(3 + Math.floor(n * 1.3), 18);
@@ -639,7 +692,7 @@ function populate(n, R, info, map) {
   }
 
   const rooms = areas.map((a) => ({ cx: a.cx, cy: a.cy, size: a.cells.length, vault: !!a.vault }));
-  return { n, w, h, tiles, ground, rooms, start, exit, items, generators, enemies, boss: null, info, doorSegs: doorSegs.length };
+  return { n, w, h, tiles, ground, rooms, start, exit, items, generators, enemies, boss: null, info, doorSegs: doorSegs.length, secret: !!secret };
 }
 
 // ---------- boss arenas ----------

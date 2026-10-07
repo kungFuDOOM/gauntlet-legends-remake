@@ -1,4 +1,6 @@
-// Bootstrap + state machine: title -> select -> play <-> paused -> levelclear / gameover.
+// Bootstrap + state machine:
+//   title -> (intro story) -> hero select -> realm map -> play <-> paused
+//   play -> level clear -> shop -> realm map ... -> Skorne -> ending story -> ending
 
 import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
@@ -6,7 +8,8 @@ import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, titleShowcase, selectShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawMap, drawShop, drawEnding, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
 const stage = document.getElementById('stage');
@@ -56,7 +59,7 @@ function saveScores(g) {
 }
 let hiscores = loadScores();
 
-function setState(s) { state = s; stateT = 0; }
+function setState(s) { if (window.__traceStates) console.log(`state ${state} -> ${s}`); state = s; stateT = 0; }
 
 function usedSources() { return slots.filter(Boolean).map((s) => s.source); }
 
@@ -64,17 +67,59 @@ function nextFreeClass(taken) {
   return CLASS_ORDER.find((c) => !taken.includes(c)) || CLASS_ORDER[0];
 }
 
-function updateTitle() {
-  if (input.firstPressed('attack') || input.anyStart()) {
-    initAudio();
-    sfx.join();
-    slots = [];
-    const src = input.firstPressed('attack') || input.sources().find((id) => input.get(id).pressed.start);
-    slots[0] = { source: src, cls: 'warrior', ready: false };
-    countdown = null;
-    setState('select');
+// ---------- quest save ----------
+
+let save = loadSave();
+function persist() {
+  if (game) for (const p of game.allPlayers()) save.heroes[p.cls] = game.heroSave(p);
+  writeSave(save);
+}
+let mapCursor = { realm: 0, stage: 1 };
+let story = null;     // { lines, idx, t, next }
+let shop = [];        // per player slot: { idx, done }
+
+function showStory(lines, next) {
+  story = { lines, idx: 0, t: 0, next };
+  say(lines[0], `story${lines[0].length}`, 0);
+  setState('story');
+}
+
+function updateStory(dt) {
+  story.t += dt;
+  const line = story.lines[story.idx];
+  const shown = Math.floor(story.t * 45);
+  const any = (b) => input.firstPressed(b) || (b === 'attack' && input.anyStart());
+  if (any('magic')) { if (window.speechSynthesis) window.speechSynthesis.cancel(); story.next(); return; }
+  if (any('attack')) {
+    if (shown < line.length) { story.t = line.length / 45 + 0.01; return; }
+    story.idx++;
+    story.t = 0;
+    if (story.idx >= story.lines.length) { story.next(); return; }
+    say(story.lines[story.idx], `story${story.lines[story.idx].length}`, 0);
   }
 }
+
+// ---------- title ----------
+
+function updateTitle() {
+  const atk = input.firstPressed('attack') || (input.anyStart() && input.sources().find((id) => input.get(id).pressed.start));
+  if (input.firstPressed('magic') && hasProgress(save)) { initAudio(); setState('confirm'); return; }
+  if (atk) {
+    initAudio();
+    sfx.join();
+    const begin = () => { slots = [{ source: atk, cls: 'warrior', ready: false }]; countdown = null; setState('select'); };
+    if (!save.progress.seenIntro) {
+      showStory(STORY.intro, () => { save.progress.seenIntro = true; writeSave(save); begin(); });
+    } else begin();
+  }
+}
+
+function updateConfirm() {
+  if (input.firstPressed('attack')) { save = newSave(); writeSave(save); toast = { text: 'A new quest begins', t: 2 }; setState('title'); }
+  else if (input.firstPressed('magic')) setState('title');
+}
+
+// ---------- hero select ----------
 
 function updateSelect(dt) {
   const joiner = input.firstPressed('attack', usedSources());
@@ -117,10 +162,52 @@ function CLASSES_NAME(cls) { return cls[0].toUpperCase() + cls.slice(1); }
 
 function startGame() {
   game = new Game();
-  slots.forEach((s, i) => { if (s) game.addPlayer(i, s.source, s.cls); });
-  game.startLevel(1);
-  setState('play');
+  slots.forEach((s, i) => { if (s) game.addPlayer(i, s.source, s.cls, save.heroes[s.cls]); });
+  openMap();
 }
+
+// ---------- realm map ----------
+
+function openMap() {
+  mapCursor = nextStage(save.progress);
+  setState('map');
+}
+
+function partySources() { return game ? game.allPlayers().map((p) => p.source) : []; }
+function partyPressed(btn) { return partySources().some((src) => input.get(src).pressed[btn]); }
+
+function updateMap() {
+  // anyone can drop in at the map too
+  const joiner = input.firstPressed('attack', partySources());
+  if (joiner && game.allPlayers().length < MAX_PLAYERS) {
+    const slot = [0, 1, 2, 3].find((i) => !game.players[i]);
+    const cls = nextFreeClass(game.allPlayers().map((p) => p.cls));
+    game.addPlayer(slot, joiner, cls, save.heroes[cls]);
+    sfx.join();
+    return;
+  }
+  const dx = (partyPressed('right') ? 1 : 0) - (partyPressed('left') ? 1 : 0);
+  const dy = (partyPressed('down') ? 1 : 0) - (partyPressed('up') ? 1 : 0);
+  if (dx) { mapCursor.realm = (mapCursor.realm + dx + 4) % 4; mapCursor.stage = Math.min(mapCursor.stage, 4); sfx.select(); }
+  if (dy) { mapCursor.stage = Math.max(1, Math.min(4, mapCursor.stage + dy)); sfx.select(); }
+  if (partyPressed('magic')) { persist(); game = null; setState('title'); return; }
+  if (partyPressed('attack')) {
+    const { realm, stage } = mapCursor;
+    if (!isUnlocked(save.progress, realm, stage)) { sfx.hurt(); toast = { text: realm === 3 ? 'Defeat the three guardians first' : 'Clear the previous stage first', t: 1.8 }; return; }
+    const go = () => {
+      for (const p of game.allPlayers()) { p.alive = true; p.hp = Math.max(p.hp, p.def.hp); }
+      game.startLevel(levelNumber(realm, stage));
+      setState('play');
+    };
+    if (!save.progress.seenRealm[realm]) {
+      save.progress.seenRealm[realm] = true;
+      writeSave(save);
+      showStory(STORY.realms[realm], go);
+    } else go();
+  }
+}
+
+// ---------- playing ----------
 
 function updatePlay(dt) {
   if (input.key('Escape') || input.key('KeyP') || input.anyStart()) { setState('paused'); return; }
@@ -130,7 +217,8 @@ function updatePlay(dt) {
   const joiner = input.firstPressed('attack', used);
   if (joiner && game.allPlayers().length < MAX_PLAYERS) {
     const slot = [0, 1, 2, 3].find((i) => !game.players[i]);
-    game.joinMidGame(slot, joiner, nextFreeClass(game.allPlayers().map((p) => p.cls)));
+    const cls = nextFreeClass(game.allPlayers().map((p) => p.cls));
+    game.joinMidGame(slot, joiner, cls, save.heroes[cls]);
   }
   for (const p of game.allPlayers()) {
     if (!p.alive && p.deadT > 1.5 && input.get(p.source).pressed.attack) game.respawn(p);
@@ -139,12 +227,23 @@ function updatePlay(dt) {
   game.update(dt, input);
 
   if (game.exitReached) {
-    const info = levelInfo(game.levelNum);
-    clearInfo = { level: game.levelNum, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName };
+    const n = game.levelNum;
+    const info = levelInfo(n);
+    const runesBefore = runeCount(save.progress);
+    completeLevel(save.progress, n, game.runesFound);
+    persist();
+    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden') };
+    if (save.progress.won && n === levelNumber(3, 4)) {
+      saveScores(game);
+      hiscores = loadScores();
+      showStory(STORY.ending, () => setState('ending'));
+      return;
+    }
     setState('levelclear');
     return;
   }
   if (!game.livePlayers().length && game.allPlayers().every((p) => p.deadT > 2.5)) {
+    persist();
     saveScores(game);
     hiscores = loadScores();
     setState('gameover');
@@ -152,64 +251,104 @@ function updatePlay(dt) {
 }
 
 function updateLevelClear() {
-  if (stateT > 1 && (input.firstPressed('attack') || stateT > 6)) {
-    const g = game;
-    for (const p of g.allPlayers()) {
+  if (stateT > 1 && (input.firstPressed('attack') || stateT > 8)) {
+    for (const p of game.allPlayers()) {
       if (!p.alive) { p.alive = true; p.hp = Math.floor(p.def.hp / 2); }
     }
-    g.startLevel(g.levelNum + 1);
-    setState('play');
+    shop = game.players.map((p) => (p ? { idx: 0, done: false } : null));
+    setState('shop');
   }
+}
+
+function updateShop() {
+  let allDone = true;
+  for (const p of game.allPlayers()) {
+    const c = shop[p.slot] || (shop[p.slot] = { idx: 0, done: false });
+    const inp = input.get(p.source);
+    if (!c.done) {
+      if (inp.pressed.up) { c.idx = (c.idx + SHOP.length - 1) % SHOP.length; sfx.select(); }
+      if (inp.pressed.down) { c.idx = (c.idx + 1) % SHOP.length; sfx.select(); }
+      if (inp.pressed.attack) {
+        const item = SHOP[c.idx];
+        if (item.id === 'done') { c.done = true; sfx.join(); }
+        else if (buy(p, item)) { sfx.gold(); c.flash = 0.4; }
+        else { sfx.hurt(); c.deny = 0.4; }
+      }
+      if (inp.pressed.magic) { c.done = true; sfx.join(); }
+    } else if (inp.pressed.magic) c.done = false;
+    allDone = allDone && c.done;
+  }
+  if (allDone && stateT > 0.5) { persist(); openMap(); }
 }
 
 function updateGameOver() {
   if (stateT < 1.5) return;
   if (input.firstPressed('attack')) {
-    // Continue: everyone revives and the level restarts. Scores are halved.
+    // Continue: everyone revives and the level restarts.
     for (const p of game.allPlayers()) {
       p.alive = true; p.hp = p.def.hp; p.score = Math.floor(p.score / 2); p.keys = 0;
     }
     game.startLevel(game.levelNum);
     setState('play');
   } else if (input.firstPressed('magic')) {
-    setState('title');
-    game = null;
+    for (const p of game.allPlayers()) { p.alive = true; p.hp = p.def.hp; p.keys = 0; }
+    openMap();
   }
+}
+
+function updateEnding() {
+  if (stateT > 3 && (input.firstPressed('attack') || input.anyStart())) { persist(); game = null; setState('title'); }
 }
 
 function render() {
   ctx.textBaseline = 'alphabetic';
   if (state === 'loading') {
     drawLoading(ctx, loadProgress, loadError);
-  } else if (state === 'title') {
+  } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
-    drawTitle(ctx, stateT, hiscores);
+    drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null);
+    if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', 'Attack: start over        Magic: keep my quest'], '#ffb060');
+  } else if (state === 'story') {
+    r3d.renderShowcase(storyShowcase(stateT, game), stateT);
+    drawStory(ctx, story, stateT);
   } else if (state === 'select') {
     r3d.renderShowcase(selectShowcase(slots, stateT), stateT);
-    drawSelect(ctx, stateT, slots, countdown);
+    drawSelect(ctx, stateT, slots, countdown, save.heroes);
+  } else if (state === 'map') {
+    r3d.renderShowcase(partyShowcase(game, stateT), stateT);
+    drawMap(ctx, stateT, save.progress, mapCursor, game);
+  } else if (state === 'shop') {
+    r3d.renderShowcase(partyShowcase(game, stateT, true), stateT);
+    drawShop(ctx, stateT, game, shop);
+  } else if (state === 'ending') {
+    r3d.renderShowcase(partyShowcase(game, stateT, true, true), stateT);
+    drawEnding(ctx, stateT, game, save.progress);
   } else if (game) {
     r3d.render(game);
-    drawGameOverlay(ctx, game, r3d, { minimap: showMinimap });
+    drawGameOverlay(ctx, game, r3d, { minimap: showMinimap, runes: runeCount(save.progress) + game.runesFound.length });
     if (state === 'paused') {
       drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
       const lines = clearInfo.wasBoss
-        ? [`The guardian of the ${clearInfo.realm} has fallen!`, 'A new realm awaits...']
-        : [`${clearInfo.name} complete`, ''];
-      for (const p of game.allPlayers()) lines.push(`${p.name}: ${p.score} pts · level ${p.lvl}`);
-      if (stateT > 1) lines.push('', 'Press Attack to continue');
-      drawOverlay(ctx, clearInfo.wasBoss ? 'REALM CONQUERED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
+        ? [`The guardian of the ${clearInfo.realm} has fallen!`, '']
+        : [`${clearInfo.name} complete`, clearInfo.newRunes ? 'You recovered a hidden Rune Stone!' : clearInfo.hidden ? 'A hidden Rune Stone lies somewhere in this level...' : '', ''];
+      for (const p of game.allPlayers()) lines.push(`${p.name}: level ${p.lvl} · ${p.gold} gold`);
+      lines.push('', `Rune Stones: ${runeCount(save.progress)} / ${TOTAL_RUNES}`);
+      if (stateT > 1) lines.push('Press Attack to visit the shop');
+      drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
-      const lines = game.allPlayers().map((p) => `${p.name}: ${p.score} pts`);
-      lines.push('', 'Attack: continue (restart level, half score)', 'Magic: return to title');
+      const lines = game.allPlayers().map((p) => `${p.name}: level ${p.lvl} · ${p.score} pts`);
+      lines.push('', 'Attack: continue (restart this level)', 'Magic: retreat to the realm map');
       drawOverlay(ctx, 'GAME OVER', lines, '#ff6050');
     }
   }
   if (toast) {
-    ctx.font = 'bold 14px sans-serif';
+    ctx.font = 'bold 16px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, toast.t)})`;
-    ctx.fillText(toast.text, VIEW_W / 2, VIEW_H - 150);
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.6, toast.t)})`;
+    ctx.fillRect(VIEW_W / 2 - 200, VIEW_H - 172, 400, 30);
+    ctx.fillStyle = `rgba(255,240,200,${Math.min(1, toast.t)})`;
+    ctx.fillText(toast.text, VIEW_W / 2, VIEW_H - 152);
   }
 }
 
@@ -232,7 +371,12 @@ function frame(now) {
 
   switch (state) {
     case 'title': updateTitle(); break;
+    case 'confirm': updateConfirm(); break;
+    case 'story': updateStory(dt); break;
     case 'select': updateSelect(dt); break;
+    case 'map': updateMap(); break;
+    case 'shop': updateShop(); break;
+    case 'ending': updateEnding(); break;
     case 'play': updatePlay(dt); break;
     case 'paused':
       if (input.key('Escape') || input.key('KeyP') || input.anyStart()) setState('play');
@@ -241,7 +385,15 @@ function frame(now) {
     case 'gameover': updateGameOver(); break;
   }
   render();
-  requestAnimationFrame(frame);
+}
+
+// Keep the loop alive even if a frame throws; report each distinct error once.
+const reported = new Set();
+function loop(now) {
+  try { frame(now); } catch (err) {
+    if (!reported.has(err.message)) { reported.add(err.message); console.error(err); }
+  }
+  requestAnimationFrame(loop);
 }
 
 // Debug/test hook (used by automated smoke tests).
@@ -255,4 +407,4 @@ function fit() {
 }
 window.addEventListener('resize', fit);
 fit();
-requestAnimationFrame(frame);
+requestAnimationFrame(loop);
