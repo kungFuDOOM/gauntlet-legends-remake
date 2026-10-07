@@ -18,7 +18,7 @@ Any static file server works too, e.g. `python3 -m http.server`. The game uses E
 
 ## Play on your phone
 
-The game has on-screen touch controls that appear automatically on phones and tablets: drag anywhere on the **left half** of the screen to move, and use the **Attack**, **Magic** and **Turbo** buttons on the right (Turbo fires your turbo attack on its own). The top-right buttons pause and toggle sound. Hold the phone sideways.
+The game has on-screen touch controls that appear automatically on phones and tablets: drag anywhere on the **left half** of the screen to move, and use the **Attack**, **Magic** and **Turbo** buttons on the right (Turbo fires your turbo attack on its own). The top-right buttons pause and toggle sound. On the hero screen, tap the **◀ ▶** arrows on your card to change hero (they can be clicked with a mouse too). Hold the phone sideways. On a touchscreen laptop the touch controls only appear when you touch the screen and hide again when you type, and you're never asked to rotate.
 
 Tip: use your browser's **Add to Home Screen** to launch it full-screen like an app.
 

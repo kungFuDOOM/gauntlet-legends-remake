@@ -1,6 +1,12 @@
 // On-screen controls for phones and tablets: a floating joystick on the left half of the
 // screen and Attack / Magic / Turbo buttons on the right, plus Pause and a sound toggle.
-// They appear on the first touch and act as one more input source ('touch').
+// They act as one more input source ('touch'). On phones and tablets they are on from the
+// start; on a touchscreen laptop they appear when the screen is touched and hide again as
+// soon as a key is pressed, and the laptop is never asked to turn sideways.
+
+// A phone or tablet: the main pointer is a finger and nothing can hover. Touchscreen
+// laptops report their mouse/touchpad as the main pointer, so they don't match.
+export const IS_HANDHELD = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
 
 const CSS = `
 #touch { position: fixed; inset: 0; z-index: 10; display: none; touch-action: none; user-select: none; -webkit-user-select: none; pointer-events: none; }
@@ -21,8 +27,9 @@ const CSS = `
 #touch .pause { right: 12px; }
 #touch .mute { right: 66px; }
 #rotate { position: fixed; inset: 0; z-index: 20; display: none; background: #000; color: #f2c14e; font: bold 22px Georgia, serif;
-  align-items: center; justify-content: center; text-align: center; padding: 30px; }
-@media (orientation: portrait) { body.touching #rotate { display: flex; } }
+  flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 30px; }
+#rotate small { margin-top: 28px; color: #b8a888; font: 15px sans-serif; text-decoration: underline; }
+@media (orientation: portrait) { body.handheld:not(.rotate-ok) #rotate { display: flex; } }
 `;
 
 export class TouchControls {
@@ -48,8 +55,10 @@ export class TouchControls {
     document.body.appendChild(root);
     const rotate = document.createElement('div');
     rotate.id = 'rotate';
-    rotate.textContent = 'Turn your phone sideways to play';
+    rotate.innerHTML = 'Turn your phone sideways to play<small>or tap here to play anyway</small>';
+    rotate.addEventListener('pointerdown', (e) => { e.preventDefault(); document.body.classList.add('rotate-ok'); });
     document.body.appendChild(rotate);
+    if (IS_HANDHELD) document.body.classList.add('handheld');
     this.root = root;
     this.stickEl = root.querySelector('.stick');
     this.knobEl = root.querySelector('.knob');
@@ -60,10 +69,21 @@ export class TouchControls {
       this.active = true;
       root.classList.add('on');
       document.body.classList.add('touching');
-      onFirstTouch();
+      onFirstTouch(IS_HANDHELD);
+    };
+    const hide = () => {
+      if (!this.active) return;
+      this.active = false;
+      root.classList.remove('on');
+      document.body.classList.remove('touching');
+      this.stick = { id: null, ox: 0, oy: 0, x: 0, y: 0 };
+      this.stickEl.style.display = 'none';
+      for (const b of Object.keys(this.held)) this.held[b] = false;
     };
     window.addEventListener('touchstart', show, { passive: true });
-    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) show();
+    if (IS_HANDHELD) show();
+    // a touchscreen laptop: typing on the keyboard puts the on-screen controls away
+    else window.addEventListener('keydown', hide);
     // keep the page from scrolling, zooming or bouncing
     document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
     document.addEventListener('gesturestart', (e) => e.preventDefault());

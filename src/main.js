@@ -9,7 +9,7 @@ import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
@@ -36,13 +36,22 @@ try {
 
 const input = new Input();
 input.touch = new TouchControls({
-  onFirstTouch: () => {
+  onFirstTouch: (handheld) => {
     initAudio(); // phones only allow sound to start from a touch
     const el = document.documentElement;
-    if (el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+    // phones and tablets go fullscreen landscape; a touchscreen laptop stays as it is
+    if (handheld && el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
   },
   onMute: () => { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; },
 });
+// Taps and clicks on the screen itself (not the on-screen buttons), in game coordinates.
+const taps = [];
+window.addEventListener('pointerdown', (e) => {
+  if (e.button > 0 || (e.target.closest && e.target.closest('.btn, #rotate'))) return;
+  const r = stage.getBoundingClientRect();
+  if (!r.width) return;
+  taps.push({ x: (e.clientX - r.left) * VIEW_W / r.width, y: (e.clientY - r.top) * VIEW_H / r.height });
+}, true);
 let game = null;
 let state = 'loading';
 let loadProgress = 0;
@@ -130,7 +139,19 @@ function updateConfirm() {
 
 // ---------- hero select ----------
 
+function cycleClass(s, dir) {
+  const pool = unlockedClasses(save.progress);
+  const k = Math.max(0, pool.indexOf(s.cls));
+  s.cls = pool[(k + dir + pool.length) % pool.length];
+  sfx.select();
+}
+
 function updateSelect(dt) {
+  for (const t of taps) {
+    const hit = selectArrowAt(t.x, t.y);
+    const s = hit && slots[hit.slot];
+    if (s && !s.ready) { initAudio(); cycleClass(s, hit.dir); countdown = null; }
+  }
   const joiner = input.firstPressed('attack', usedSources());
   if (joiner && slots.filter(Boolean).length < MAX_PLAYERS) {
     const idx = [0, 1, 2, 3].find((i) => !slots[i]);
@@ -145,12 +166,7 @@ function updateSelect(dt) {
     const inp = input.get(s.source);
     if (!s.ready) {
       const dir = (inp.pressed.right || inp.pressed.down ? 1 : 0) - (inp.pressed.left || inp.pressed.up ? 1 : 0);
-      if (dir) {
-        const pool = unlockedClasses(save.progress);
-        const k = Math.max(0, pool.indexOf(s.cls));
-        s.cls = pool[(k + dir + pool.length) % pool.length];
-        sfx.select();
-      }
+      if (dir) cycleClass(s, dir);
       if (inp.pressed.attack) { s.ready = true; sfx.join(); say(CLASSES_NAME(s.cls), `pick${i}`, 500); }
       if (inp.pressed.magic) {
         slots[i] = null; countdown = null;
@@ -441,6 +457,7 @@ function frame(now) {
     case 'levelclear': updateLevelClear(); break;
     case 'gameover': updateGameOver(); break;
   }
+  taps.length = 0;
   render();
 }
 
@@ -454,7 +471,7 @@ function loop(now) {
 }
 
 // Debug/test hook (used by automated smoke tests).
-window.__gl = { get game() { return game; }, get state() { return state; }, get r3d() { return r3d; } };
+window.__gl = { get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get r3d() { return r3d; } };
 
 // Scale canvas to fit window while keeping aspect ratio.
 function fit() {

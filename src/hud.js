@@ -373,6 +373,40 @@ export function selectShowcase(slots, time) {
   return out;
 }
 
+const SEL_ARROW_Y = 240, SEL_ARROW_INSET = 28;
+
+function drawArrowButton(ctx, cx, cy, dir, color) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx + dir * 9, cy);
+  ctx.lineTo(cx - dir * 6, cy - 10);
+  ctx.lineTo(cx - dir * 6, cy + 10);
+  ctx.closePath();
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+// Which hero-select arrow (if any) is under a tap or click at screen point (x, y).
+// Generous hit areas: the outer third of each card, from the portrait down to the name.
+export function selectArrowAt(x, y) {
+  for (let s = 0; s < MAX_PLAYERS; s++) {
+    const cx = SEL_X0 + s * (SEL_W + SEL_GAP);
+    const lx = x - cx, ly = y - SEL_Y;
+    if (lx < 0 || lx > SEL_W || ly < 120 || ly > 330) continue;
+    if (lx < SEL_W / 3) return { slot: s, dir: -1 };
+    if (lx > SEL_W * 2 / 3) return { slot: s, dir: 1 };
+    return null;
+  }
+  return null;
+}
+
 export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -383,7 +417,10 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
   tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
   outlined(ctx, 'CHOOSE YOUR HERO', VIEW_W / 2, 66, tg, '#1a0a00', 6);
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, 'Left/Right: choose · Attack: ready · Magic: back · Other players press Attack to join', VIEW_W / 2, 92, '#e0d4b8', '#000', 3);
+  const help = document.body.classList.contains('touching')
+    ? 'Tap ◀ ▶ to change hero · ATTACK: ready · MAGIC: back'
+    : 'Left/Right or click ◀ ▶: choose · Attack: ready · Magic: back · Other players press Attack to join';
+  outlined(ctx, help, VIEW_W / 2, 92, '#e0d4b8', '#000', 3);
 
   for (let s = 0; s < MAX_PLAYERS; s++) {
     const x = SEL_X0 + s * (SEL_W + SEL_GAP), y = SEL_Y;
@@ -407,8 +444,11 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
     if (def.secret) { ctx.font = `bold 11px ${SANS}`; outlined(ctx, '★ SECRET HERO ★', x + SEL_W / 2, y + 76, '#ff9af0', '#000', 3); }
     const saved = heroes[slot.cls];
     if (saved) { ctx.font = `bold 12px ${SANS}`; outlined(ctx, `SAVED HERO · LEVEL ${saved.lvl} · ${saved.gold} GOLD`, x + SEL_W / 2, y + 60, '#ffd860', '#000', 3); }
+    if (!slot.ready) {
+      for (const dir of [-1, 1]) drawArrowButton(ctx, x + SEL_W / 2 + dir * (SEL_W / 2 - SEL_ARROW_INSET), y + SEL_ARROW_Y, dir, def.color);
+    }
     ctx.font = `bold 26px ${SERIF}`;
-    outlined(ctx, `◀ ${def.name.toUpperCase()} ▶`, x + SEL_W / 2, y + 306, def.color, '#000', 5);
+    outlined(ctx, def.name.toUpperCase(), x + SEL_W / 2, y + 306, def.color, '#000', 5);
     ctx.font = `12px ${SANS}`;
     outlined(ctx, def.blurb, x + SEL_W / 2, y + 326, '#e0d4b8', '#000', 3);
     const stats = [
