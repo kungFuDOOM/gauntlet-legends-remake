@@ -1,19 +1,18 @@
-// Three.js renderer: builds 3D level geometry from the tile map and keeps a 3D model in
-// sync with every simulated entity. The simulation stays 2D on the ground plane
-// (sim x -> world X, sim y -> world Z), exactly like the arcade original's gameplay.
+// Three.js renderer. Builds the dungeon from the tile map out of modular KayKit pieces and
+// keeps an animated 3D model in sync with every simulated entity. The simulation stays 2D
+// on the ground plane (sim x -> world X, sim y -> world Z), as in the arcade original.
 
 import * as THREE from 'three';
 import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS } from './config.js';
 import { T } from './level.js';
-import {
-  floorTexture, wallTexture, capTexture, glowTexture, buildHero, buildEnemy, buildBoss, buildGenerator,
-  buildItem, buildDoor, buildTorch, buildExit, buildProjectile, buildMarker, heroColor,
-} from './models.js';
+import { assets, Actor, cloneProp, MODEL_SCALE } from './assets.js';
+import { capTexture, glowTexture, glowSprite, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
 
-const WALL_H = 60;
-const CAM_OFFSET = new THREE.Vector3(0, 400, 250);
+const WALL_H = 52;
+const CAM_OFFSET = new THREE.Vector3(0, 380, 240);
 const MAX_PARTICLES = 900;
-const TORCH_LIGHTS = 6;
+const TORCH_LIGHTS = 8;
+const S = MODEL_SCALE;
 
 function hash(x, y) {
   let h = (x * 374761393 + y * 668265263) | 0;
@@ -21,46 +20,53 @@ function hash(x, y) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+// How each class is animated.
+const HERO_STYLE = {
+  warrior: { idle: '2H_Melee_Idle', melee: '2H_Melee_Attack_Chop', shoot: 'Throw', turbo: '2H_Melee_Attack_Spinning', meleeSpeed: 2.2, shootSpeed: 2.4 },
+  valkyrie: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: 'Dodge_Forward', meleeSpeed: 2.2, shootSpeed: 2.6 },
+  wizard: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: 'Spellcast_Shoot', turbo: 'Spellcast_Long', meleeSpeed: 2.2, shootSpeed: 2.6 },
+  archer: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: '2H_Ranged_Shoot', turbo: '2H_Ranged_Shoot', meleeSpeed: 2.4, shootSpeed: 3.2 },
+};
+
+const ENEMY_STYLE = {
+  grunt: { model: 'skeleton_minion', weapon: 'weapon_blade', walk: 'Walking_D_Skeletons', walkSpeed: 1.6, scale: 1 },
+  ghost: { model: 'skeleton_minion', ghost: true, walk: 'Running_C', walkSpeed: 1.2, scale: 0.95, float: true },
+  lobber: { model: 'skeleton_rogue', walk: 'Running_C', walkSpeed: 1.3, scale: 0.85 },
+  demon: { model: 'skeleton_warrior', weapon: 'weapon_axe', tint: '#ff7a60', eyes: '#ffcc00', walk: 'Running_A', walkSpeed: 1.3, scale: 1.08, horns: '#e8dcb8' },
+  sorcerer: { model: 'skeleton_mage', weapon: 'weapon_staff', tint: '#d8a0ff', eyes: '#ff40ff', walk: 'Walking_A', walkSpeed: 1.4, scale: 1 },
+  death: { model: 'skeleton_mage', weapon: 'weapon_staff', tint: '#3a3440', eyes: '#ff1010', walk: 'Walking_A', walkSpeed: 1.2, scale: 1.25 },
+};
+
 export class Renderer3D {
   constructor(canvas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(VIEW_W, VIEW_H, false);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    this.camera = new THREE.PerspectiveCamera(42, VIEW_W / VIEW_H, 10, 4000);
+    this.camera = new THREE.PerspectiveCamera(42, VIEW_W / VIEW_H, 10, 3000);
     this.scene = new THREE.Scene();
-
     this.hemi = new THREE.HemisphereLight('#ffffff', '#202020', 1);
-    this.scene.add(this.hemi);
-    this.sun = new THREE.DirectionalLight('#ffffff', 1.2);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera;
-    sc.left = -480; sc.right = 480; sc.top = 420; sc.bottom = -420; sc.near = 10; sc.far = 1600;
-    this.sun.shadow.bias = -0.0008;
-    this.scene.add(this.sun, this.sun.target);
+    this.sun = new THREE.DirectionalLight('#ffffff', 1);
+    this.scene.add(this.hemi, this.sun, this.sun.target);
 
     this.torchLights = [];
     for (let i = 0; i < TORCH_LIGHTS; i++) {
-      const l = new THREE.PointLight('#ff9a50', 0, 240, 1);
+      const l = new THREE.PointLight('#ff9a50', 0, 260, 1);
       this.scene.add(l);
       this.torchLights.push(l);
     }
     this.playerLights = [];
     for (let i = 0; i < 4; i++) {
-      const l = new THREE.PointLight('#ffffff', 0, 220, 1);
+      const l = new THREE.PointLight('#ffffff', 0, 200, 1);
       this.scene.add(l);
       this.playerLights.push(l);
     }
-    this.exitLight = new THREE.PointLight('#60c0ff', 0, 200, 1);
+    this.exitLight = new THREE.PointLight('#60c0ff', 0, 220, 1);
     this.scene.add(this.exitLight);
 
-    // particles
     const pg = new THREE.BufferGeometry();
     this.pPos = new Float32Array(MAX_PARTICLES * 3);
     this.pCol = new Float32Array(MAX_PARTICLES * 3);
@@ -72,23 +78,67 @@ export class Renderer3D {
     this.particles.frustumCulled = false;
     this.scene.add(this.particles);
 
-    this.meshes = new Map();
+    // soft blob shadow shared by every character and pickup (N64-era style, and cheap)
+    const sc = document.createElement('canvas');
+    sc.width = sc.height = 64;
+    const sctx = sc.getContext('2d');
+    const grd = sctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(0,0,0,0.6)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    sctx.fillStyle = grd;
+    sctx.fillRect(0, 0, 64, 64);
+    this.shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    this.shadowMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), transparent: true, depthWrite: false });
+
+    this.views = new Map();
+    this.corpses = [];
     this.markers = new Map();
     this.levelGroup = null;
     this.level = null;
     this.tmpColor = new THREE.Color();
-    this.showcase = null;
+    this.tmpV = new THREE.Vector3();
+    this.lastTime = 0;
   }
 
-  // ---------- level geometry ----------
+  blob(parent, size) {
+    const m = new THREE.Mesh(this.shadowGeo, this.shadowMat);
+    m.scale.set(size, 1, size);
+    m.position.y = 1;
+    m.renderOrder = 1;
+    parent.add(m);
+    return m;
+  }
+
+  // ---------- level construction ----------
+
+  // Instanced copies of a prop at many transforms ({x, y, z, ry, sx, sy, sz}).
+  instanced(group, name, list) {
+    if (!list.length) return;
+    const tpl = assets.props[name];
+    tpl.updateMatrixWorld(true);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    tpl.traverse((mesh) => {
+      if (!mesh.isMesh) return;
+      const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, list.length);
+      list.forEach((t, i) => {
+        q.setFromAxisAngle(up, t.ry || 0);
+        sc.set(t.sx ?? S, t.sy ?? S, t.sz ?? S);
+        pos.set(t.x, t.y || 0, t.z);
+        m4.compose(pos, q, sc).multiply(mesh.matrixWorld);
+        inst.setMatrixAt(i, m4);
+      });
+      inst.instanceMatrix.needsUpdate = true;
+      inst.computeBoundingSphere();
+      group.add(inst);
+    });
+  }
 
   buildLevel(g) {
-    if (this.levelGroup) {
-      this.scene.remove(this.levelGroup);
-      this.levelGroup.traverse((o) => { if (o.geometry && o.userData.own) o.geometry.dispose(); });
-    }
-    for (const [, m] of this.meshes) this.scene.remove(m);
-    this.meshes.clear();
+    if (this.levelGroup) this.scene.remove(this.levelGroup);
+    for (const [, v] of this.views) this.scene.remove(v.root);
+    this.views.clear();
+    for (const c of this.corpses) this.scene.remove(c.root);
+    this.corpses = [];
     for (const [, m] of this.markers) this.scene.remove(m);
     this.markers.clear();
 
@@ -98,117 +148,267 @@ export class Renderer3D {
     this.level = g.level;
     this.scene.add(group);
     this.scene.background = new THREE.Color(th.sky);
-    this.scene.fog = new THREE.Fog(th.fog, 500, 1100);
+    this.scene.fog = new THREE.Fog(th.fog, 450, 1000);
     this.hemi.color.set(th.light);
     this.hemi.groundColor.set(th.fog);
-    this.hemi.intensity = th.ambient * 1.6;
+    this.hemi.intensity = th.ambient * 1.5;
     this.sun.color.set(th.light);
-    this.sun.intensity = th.ambient * 1.4 + 0.3;
+    this.sun.intensity = th.ambient * 1.2 + 0.2;
 
     const { w, h } = g;
     const walk = (tx, ty) => g.tile(tx, ty) !== T.WALL;
+    const isWall = (tx, ty) => g.tile(tx, ty) === T.WALL;
 
-    const floor = { pos: [], nor: [], uv: [] };
-    const sides = { pos: [], nor: [], uv: [] };
-    const tops = { pos: [], nor: [], uv: [] };
-    const quad = (buf, a, b, c, d, n, uvs) => {
-      for (const i of [0, 1, 2, 0, 2, 3]) {
-        const p = [a, b, c, d][i];
-        buf.pos.push(p[0], p[1], p[2]);
-        buf.nor.push(n[0], n[1], n[2]);
-        buf.uv.push(uvs[i][0], uvs[i][1]);
-      }
-    };
-    const U = 112;
+    // floor tiles, varied like a real dungeon floor
+    const floors = { floor: [], floor_broken_a: [], floor_broken_b: [], floor_weeds: [], floor_decorated: [] };
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
-        const x0 = tx * TILE, z0 = ty * TILE, x1 = x0 + TILE, z1 = z0 + TILE;
-        if (walk(tx, ty)) {
-          quad(floor, [x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0], [0, 1, 0],
-            [[x0 / U, z1 / U], [x1 / U, z1 / U], [x1 / U, z0 / U], [x0 / U, z0 / U]]);
-          continue;
+        if (!walk(tx, ty)) continue;
+        const r = hash(tx, ty);
+        const kind = r < 0.76 ? 'floor' : r < 0.86 ? 'floor_broken_a' : r < 0.95 ? 'floor_broken_b' : r < 0.975 ? 'floor_weeds' : 'floor_decorated';
+        floors[kind].push({ x: tx * TILE + 16, z: ty * TILE + 16, ry: Math.floor(hash(ty, tx) * 4) * Math.PI / 2 });
+      }
+    for (const [k, list] of Object.entries(floors)) this.instanced(group, k, list);
+
+    // walls stand on every floor/wall boundary; caps close off the solid rock above
+    const walls = { wall: [], wall_cracked: [] };
+    const wallFaces = [];
+    const SX = S * 0.54, SY = WALL_H / 4, SZ = S * 0.5;
+    for (let ty = 0; ty < h; ty++)
+      for (let tx = 0; tx < w; tx++) {
+        if (!walk(tx, ty)) continue;
+        const sides = [
+          [0, -1, tx * TILE + 16, ty * TILE - 4, 0],
+          [0, 1, tx * TILE + 16, ty * TILE + TILE + 4, Math.PI],
+          [-1, 0, tx * TILE - 4, ty * TILE + 16, Math.PI / 2],
+          [1, 0, tx * TILE + TILE + 4, ty * TILE + 16, -Math.PI / 2],
+        ];
+        for (const [dx, dy, x, z, ry] of sides) {
+          if (!isWall(tx + dx, ty + dy)) continue;
+          const kind = hash(tx * 7 + dx, ty * 13 + dy) < 0.12 ? 'wall_cracked' : 'wall';
+          walls[kind].push({ x, z, ry, sx: SX, sy: SY, sz: SZ });
+          wallFaces.push({ tx, ty, dx, dy, x, z, ry });
         }
+      }
+    for (const [k, list] of Object.entries(walls)) this.instanced(group, k, list);
+
+    const cap = { pos: [], uv: [] };
+    for (let ty = 0; ty < h; ty++)
+      for (let tx = 0; tx < w; tx++) {
+        if (!isWall(tx, ty)) continue;
         let near = false;
         for (let oy = -1; oy <= 1 && !near; oy++) for (let ox = -1; ox <= 1; ox++) if (walk(tx + ox, ty + oy)) { near = true; break; }
         if (!near) continue;
-        const H = WALL_H;
-        quad(tops, [x0, H, z1], [x1, H, z1], [x1, H, z0], [x0, H, z0], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
-        const vH = H / U;
-        if (walk(tx, ty + 1)) quad(sides, [x0, 0, z1], [x1, 0, z1], [x1, H, z1], [x0, H, z1], [0, 0, 1], [[x0 / U, 0], [x1 / U, 0], [x1 / U, vH], [x0 / U, vH]]);
-        if (walk(tx, ty - 1)) quad(sides, [x1, 0, z0], [x0, 0, z0], [x0, H, z0], [x1, H, z0], [0, 0, -1], [[x1 / U, 0], [x0 / U, 0], [x0 / U, vH], [x1 / U, vH]]);
-        if (walk(tx + 1, ty)) quad(sides, [x1, 0, z1], [x1, 0, z0], [x1, H, z0], [x1, H, z1], [1, 0, 0], [[z1 / U, 0], [z0 / U, 0], [z0 / U, vH], [z1 / U, vH]]);
-        if (walk(tx - 1, ty)) quad(sides, [x0, 0, z0], [x0, 0, z1], [x0, H, z1], [x0, H, z0], [-1, 0, 0], [[z0 / U, 0], [z1 / U, 0], [z1 / U, vH], [z0 / U, vH]]);
+        const x0 = tx * TILE, z0 = ty * TILE, x1 = x0 + TILE, z1 = z0 + TILE, y = WALL_H + 0.3;
+        cap.pos.push(x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z1, x1, y, z0, x0, y, z0);
+        cap.uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
       }
-    const mesh = (buf, mat) => {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos, 3));
-      geo.setAttribute('normal', new THREE.Float32BufferAttribute(buf.nor, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(buf.uv, 2));
-      const m = new THREE.Mesh(geo, mat);
-      m.userData.own = true;
-      m.receiveShadow = true;
-      group.add(m);
-      return m;
-    };
-    mesh(floor, new THREE.MeshStandardMaterial({ map: floorTexture(`#${new THREE.Color(th.floorB).offsetHSL(0, 0.02, 0.1).getHexString()}`), roughness: 0.92 }));
-    mesh(sides, new THREE.MeshStandardMaterial({ map: wallTexture(th.wallSide), roughness: 0.9 })).castShadow = true;
-    mesh(tops, new THREE.MeshStandardMaterial({ map: capTexture(th.wallTop), color: '#8a8a8a', roughness: 0.9 })).castShadow = true;
+    const capGeo = new THREE.BufferGeometry();
+    capGeo.setAttribute('position', new THREE.Float32BufferAttribute(cap.pos, 3));
+    capGeo.setAttribute('uv', new THREE.Float32BufferAttribute(cap.uv, 2));
+    capGeo.computeVertexNormals();
+    group.add(new THREE.Mesh(capGeo, new THREE.MeshStandardMaterial({ map: capTexture(th.wallTop), color: '#5a5550', roughness: 1 })));
 
-    // doors
+    // gates on door tiles; they sink into the floor when unlocked
     this.doors = new Map();
+    const open = (x, y) => { const k = g.tile(x, y); return k === T.FLOOR || k === T.EXIT; };
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
         if (g.tile(tx, ty) !== T.DOOR) continue;
-        // A door blocking an east-west corridor stands in a north-south column.
-        const open = (x, y) => { const k = g.tile(x, y); return k === T.FLOOR || k === T.EXIT; };
-        const vertical = open(tx - 1, ty) || open(tx + 1, ty);
-        const d = buildDoor(vertical);
-        d.position.set(tx * TILE + TILE / 2, 0, ty * TILE + TILE / 2);
-        d.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+        const d = cloneProp('wall_gated');
+        d.scale.set(S * 0.5, SY, S * 0.6);
+        d.position.set(tx * TILE + 16, 0, ty * TILE + 16);
+        if (open(tx - 1, ty) || open(tx + 1, ty)) d.rotation.y = Math.PI / 2;
         group.add(d);
         this.doors.set(ty * w + tx, d);
       }
 
-    // torches on south-facing wall faces
+    // torches and banners on walls that face the camera, crates and bones for clutter
     this.torches = [];
-    const taken = [];
-    for (let ty = 0; ty < h; ty++)
-      for (let tx = 0; tx < w; tx++) {
-        if (g.tile(tx, ty) !== T.WALL || !walk(tx, ty + 1) || g.tile(tx, ty + 1) === T.DOOR) continue;
-        if (hash(tx, ty) > 0.16) continue;
-        if (taken.some(([x, y]) => Math.abs(x - tx) + Math.abs(y - ty) < 5)) continue;
-        taken.push([tx, ty]);
-        const t = buildTorch();
-        t.position.set(tx * TILE + TILE / 2, 36, ty * TILE + TILE);
-        group.add(t);
-        this.torches.push(t);
-      }
-
-    // exit
-    const ex = g.level.exit;
-    this.exitSealed = g.tile(ex.x, ex.y) === T.SEALED;
-    this.exit = buildExit(this.exitSealed);
-    this.exit.position.set(ex.x * TILE + TILE / 2, 0, ex.y * TILE + TILE / 2);
-    group.add(this.exit);
-
-    // scattered rubble & bones for atmosphere
-    const debris = new THREE.MeshStandardMaterial({ color: th.wallSide, flatShading: true, roughness: 1 });
-    const bone = new THREE.MeshStandardMaterial({ color: '#d8d0b8', flatShading: true });
-    const rock = new THREE.DodecahedronGeometry(3, 0);
-    const boneG = new THREE.CylinderGeometry(0.8, 0.8, 9, 5);
+    const torchSpots = [];
+    const decoSpots = [];
+    for (const f of wallFaces) {
+      const facesCam = f.dy === -1; // wall to the north: its face looks south toward the camera
+      const r = hash(f.tx * 3 + 11, f.ty * 5 + 7);
+      if (facesCam && r < 0.2 && !torchSpots.some((p) => Math.abs(p.tx - f.tx) + Math.abs(p.ty - f.ty) < 5)) torchSpots.push(f);
+      else if (facesCam && r > 0.93) decoSpots.push(f);
+    }
+    for (const f of torchSpots) {
+      const t = cloneProp('torch');
+      t.scale.setScalar(S);
+      t.position.set(f.x, 30, f.ty * TILE);
+      const halo = glowSprite('#ffa040', 46, 0.75);
+      halo.position.set(f.x, 42, f.ty * TILE + 8);
+      group.add(t, halo);
+      this.torches.push({ x: f.x, z: f.ty * TILE + 10, halo });
+    }
+    for (const f of decoSpots) {
+      const b = cloneProp(hash(f.tx, f.ty) < 0.5 ? 'banner_red' : 'banner_blue');
+      b.scale.set(S * 0.5, S * 0.42, S * 0.5);
+      b.position.set(f.x, 0, f.ty * TILE - 8);
+      group.add(b);
+    }
+    const clutter = [];
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
         if (g.tile(tx, ty) !== T.FLOOR) continue;
-        const r = hash(tx * 3 + 1, ty * 7 + 2);
-        if (r > 0.05) continue;
-        const nearWall = g.tile(tx - 1, ty) === T.WALL || g.tile(tx + 1, ty) === T.WALL || g.tile(tx, ty - 1) === T.WALL;
-        const m = new THREE.Mesh(r < 0.02 ? boneG : rock, r < 0.02 ? bone : debris);
-        m.position.set(tx * TILE + 6 + r * 300, r < 0.02 ? 1 : 2, ty * TILE + 6 + hash(tx, ty) * 20);
-        m.rotation.set(r < 0.02 ? Math.PI / 2 : r * 40, r * 90, 0);
-        if (!nearWall && r >= 0.02) m.scale.setScalar(0.7);
-        m.receiveShadow = true;
-        group.add(m);
+        const r = hash(tx * 17 + 3, ty * 31 + 5);
+        const wallN = isWall(tx, ty - 1), wallW = isWall(tx - 1, ty), wallE = isWall(tx + 1, ty);
+        if (wallN && (wallW || wallE) && r < 0.35) {
+          const kinds = ['barrel_stack', 'crates', 'keg'];
+          const p = cloneProp(kinds[Math.floor(hash(ty, tx * 3) * kinds.length)]);
+          p.scale.setScalar(S * 0.5);
+          p.position.set(tx * TILE + (wallW ? 10 : 22), 0, ty * TILE + 10);
+          p.rotation.y = hash(tx, ty * 9) * Math.PI;
+          group.add(p);
+        } else if (r < 0.025) clutter.push({ tx, ty, r });
       }
+    for (const c of clutter) {
+      const kinds = ['bones_a', 'bones_b', 'skull', 'ribcage'];
+      const k = kinds[Math.floor(hash(c.tx * 5, c.ty) * kinds.length)];
+      const p = cloneProp(k);
+      p.scale.setScalar(S * (k === 'skull' || k === 'ribcage' ? 0.3 : 0.45));
+      p.position.set(c.tx * TILE + 8 + hash(c.ty, c.tx) * 16, k === 'ribcage' ? 4 : 2, c.ty * TILE + 8 + c.r * 400);
+      p.rotation.y = c.r * 300;
+      group.add(p);
+    }
+
+    // exit portal flanked by candles
+    const ex = g.level.exit;
+    this.exitSealed = g.tile(ex.x, ex.y) === T.SEALED;
+    this.exit = buildExit(this.exitSealed);
+    this.exit.position.set(ex.x * TILE + 16, 0.5, ex.y * TILE + 16);
+    group.add(this.exit);
+    for (const ox of [-22, 22]) {
+      const c = cloneProp('candles');
+      c.scale.setScalar(S * 0.6);
+      c.position.set(ex.x * TILE + 16 + ox, 0, ex.y * TILE);
+      group.add(c);
+    }
+  }
+
+  // ---------- views for entities ----------
+
+  makeHero(p) {
+    const a = new Actor(p.cls);
+    const root = a.root;
+    // player-coloured ring at the feet, like the arcade's player markers
+    const ring = new THREE.Mesh(new THREE.RingGeometry(11, 14, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: heroColor(p.cls), transparent: true, opacity: 0.8, depthWrite: false }));
+    ring.position.y = 1.2;
+    root.add(ring);
+    this.blob(root, 34);
+    a.base(HERO_STYLE[p.cls].idle);
+    return { kind: 'hero', root, actor: a, ring };
+  }
+
+  makeEnemy(e) {
+    const st = ENEMY_STYLE[e.type];
+    const a = new Actor(st.model, { tint: st.tint, ghost: st.ghost, emissiveEyes: st.eyes });
+    a.model.scale.setScalar(S * st.scale);
+    if (st.weapon) a.attach(st.weapon, 'handslot.r');
+    if (st.horns) addHorns(a, st.horns, 0.12, 0.6, 0.35);
+    if (!st.float) this.blob(a.root, 30 * st.scale);
+    a.base('Idle');
+    if (e.fromGen && !st.float) a.play('Spawn_Ground', { timeScale: 2.2 });
+    return { kind: 'enemy', root: a.root, actor: a, style: st };
+  }
+
+  makeBoss(e, g) {
+    const b = g.info.boss;
+    if (b.model === 'skorne') {
+      const a = new Actor('skeleton_warrior', { tint: '#b080ff', emissiveEyes: '#ff2020' });
+      a.model.scale.setScalar(S * 2.6);
+      a.attach('weapon_axe', 'handslot.r', { scale: 1.3 });
+      addHorns(a, b.horn, 0.16, 0.9, 0.4);
+      this.blob(a.root, 90);
+      a.base('Idle');
+      return { kind: 'boss', root: a.root, actor: a };
+    }
+    const root = buildBoss(b.model, b.color, b.horn);
+    root.traverse((o) => { if (o.isMesh) o.castShadow = false; });
+    this.blob(root, 110);
+    for (const mat of root.userData.mats) { mat.userData.e0 = mat.emissive.clone(); mat.userData.ei0 = mat.emissiveIntensity; }
+    return { kind: 'boss', root, proc: true };
+  }
+
+  makeGenerator(gen) {
+    const root = new THREE.Group();
+    const add = (name, s, x = 0, y = 0, z = 0, ry = 0) => { const p = cloneProp(name); p.scale.setScalar(S * s); p.position.set(x, y, z); p.rotation.y = ry; root.add(p); return p; };
+    const colors = { grunt: '#ff8a30', ghost: '#a0c0ff', lobber: '#b0ff40', demon: '#ff3020', sorcerer: '#e040ff', death: '#ffffff' };
+    switch (gen.type) {
+      case 'ghost': add('grave', 0.75, 0, 0, -2); add('skull', 0.3, 9, 0, 9); break;
+      case 'sorcerer': add('shrine', 0.8); add('skull_candle', 0.45, 10, 0, 8); break;
+      case 'demon': add('coffin', 0.6, 0, 0, 0, Math.PI / 2); add('skull_candle', 0.5, 0, 9, 0); break;
+      case 'lobber': add('crates', 0.55); add('skull', 0.3, 10, 0, 10); break;
+      default: // grunt: a heap of bones with a skull on top
+        add('ribcage', 0.55, 0, 6, 0); add('bones_a', 0.6, -8, 2, 6, 0.6); add('bones_b', 0.6, 7, 2, -6, 2.1);
+        add('bones_a', 0.6, 4, 2, 8, 1.2); add('skull', 0.45, 0, 10, 2);
+    }
+    const halo = glowSprite(colors[gen.type] || '#fff', 54, 0.5);
+    halo.position.y = 14;
+    root.add(halo);
+    const mats = [];
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = o.material.clone();
+      o.material.userData.e0 = o.material.emissive.clone();
+      mats.push(o.material);
+    });
+    this.blob(root, 44);
+    return { kind: 'gen', root, halo, mats };
+  }
+
+  makeItem(it) {
+    const root = new THREE.Group();
+    const spin = new THREE.Group();
+    root.add(spin);
+    let glow = null, spins = false;
+    const add = (name, s, y = 0) => { const p = cloneProp(name); p.scale.setScalar(S * s); p.position.y = y; spin.add(p); return p; };
+    switch (it.type) {
+      case 'food': add(hash(it.x, it.y) < 0.5 ? 'food' : 'food_b', 0.7); break;
+      case 'gold': add('coins', 0.65); glow = '#ffd040'; break;
+      case 'key': { const k = add('key', 0.9, 10); k.rotation.z = Math.PI / 2; k.position.x = -3; glow = '#ffd040'; spins = true; break; }
+      case 'potion': {
+        const b = add('potion', 0.9);
+        b.traverse((o) => {
+          if (!o.isMesh) return;
+          o.material = o.material.clone();
+          o.material.color.multiply(new THREE.Color('#6a8aff'));
+          o.material.emissive = new THREE.Color('#2040ff');
+          o.material.emissiveIntensity = 0.5;
+        });
+        glow = '#4a6aff'; spins = true; break;
+      }
+      case 'chest': add('chest', 0.6); break;
+      case 'barrel': add('barrel', 0.75); break;
+      default: {
+        // gems, amulets and rune stones keep their bespoke glowing models
+        const m = buildItem(it.type, it.sub, it.sub && POWERUPS[it.sub].color);
+        m.scale.setScalar(1.2);
+        root.add(m);
+        this.blob(root, 22);
+        return { kind: 'item', root, spin: m.userData.spin, spins: m.userData.spins };
+      }
+    }
+    if (glow) { const s = glowSprite(glow, 30, 0.45); s.position.y = 10; root.add(s); }
+    this.blob(root, it.type === 'chest' ? 34 : 24);
+    return { kind: 'item', root, spin, spins };
+  }
+
+  makeProjectile(pr) {
+    if (pr.kind === 'axe') {
+      const root = new THREE.Group();
+      const spin = new THREE.Group();
+      const ax = cloneProp('weapon_axe');
+      ax.scale.setScalar(S * 0.7);
+      ax.rotation.z = Math.PI / 2;
+      ax.position.x = -4;
+      spin.add(ax);
+      root.add(spin);
+      return { kind: 'proj', root, spin };
+    }
+    const root = buildProjectile(pr.kind);
+    return { kind: 'proj', root, spin: root.userData.spin };
   }
 
   // ---------- per-frame sync ----------
@@ -216,37 +416,53 @@ export class Renderer3D {
   render(g) {
     if (this.level !== g.level) this.buildLevel(g);
     const t = g.time;
+    const dt = Math.min(0.05, Math.max(0, t - this.lastTime));
+    this.lastTime = t;
 
-    // camera follows the party
     const tx = g.camX + WORLD_VIEW_W / 2, tz = g.camY + WORLD_VIEW_H / 2 + 10;
     const sx = (Math.random() - 0.5) * g.shake, sz = (Math.random() - 0.5) * g.shake;
     this.camera.position.set(tx + CAM_OFFSET.x + sx, CAM_OFFSET.y, tz + CAM_OFFSET.z + sz);
     this.camera.lookAt(tx + sx, 0, tz + sz - 10);
-    this.sun.position.set(tx - 220, 600, tz + 260);
+    this.sun.position.set(tx - 200, 500, tz + 300);
     this.sun.target.position.set(tx, 0, tz);
+    this.camX = tx; this.camZ = tz;
 
-    this.syncLevel(g, t, tx, tz);
+    this.syncLevel(g, t);
 
     const seen = new Set();
-    for (const p of g.allPlayers()) this.sync(p, () => buildHero(p.cls), (m) => this.updateHero(m, p, t), seen);
+    for (const p of g.allPlayers()) this.sync(p, () => this.makeHero(p), (v) => this.updateHero(v, p, g, dt), seen);
     for (const e of g.enemies) {
-      if (e.type === 'boss') this.sync(e, () => buildBoss(g.info.boss.model, g.info.boss.color, g.info.boss.horn), (m) => this.updateBoss(m, e, g, t), seen);
-      else this.sync(e, () => buildEnemy(e.type), (m) => this.updateEnemy(m, e, g, t), seen);
+      if (e.type === 'boss') this.sync(e, () => this.makeBoss(e, g), (v) => this.updateBoss(v, e, g, dt), seen);
+      else this.sync(e, () => this.makeEnemy(e), (v) => this.updateEnemy(v, e, g, dt), seen);
     }
-    for (const gen of g.gens) this.sync(gen, () => buildGenerator(gen.type), (m) => this.updateGen(m, gen, t), seen);
-    for (const it of g.items) this.sync(it, () => buildItem(it.type, it.sub, it.sub && POWERUPS[it.sub].color), (m) => this.updateItem(m, it, t), seen);
-    for (const pr of g.projs) this.sync(pr, () => buildProjectile(pr.kind), (m) => this.updateProj(m, pr, t), seen);
-    for (const [obj, m] of this.meshes) {
-      if (!seen.has(obj)) { this.scene.remove(m); this.meshes.delete(obj); }
+    for (const gen of g.gens) this.sync(gen, () => this.makeGenerator(gen), (v) => this.updateGen(v, gen, t), seen);
+    for (const it of g.items) this.sync(it, () => this.makeItem(it), (v) => this.updateItem(v, it, t), seen);
+    for (const pr of g.projs) this.sync(pr, () => this.makeProjectile(pr), (v) => this.updateProj(v, pr, t), seen);
+    for (const [obj, v] of this.views) {
+      if (seen.has(obj)) continue;
+      this.views.delete(obj);
+      // slain monsters collapse and sink instead of popping out of existence
+      if ((v.kind === 'enemy' || v.kind === 'boss') && v.actor && !obj.vanish && v.root.visible) {
+        v.actor.flash(0);
+        v.actor.die(v.kind === 'boss' ? 'Death_B' : 'Death_A');
+        this.corpses.push({ ...v, t: 0 });
+      } else this.scene.remove(v.root);
     }
-    // lob telegraphs
+    this.corpses = this.corpses.filter((c) => {
+      c.t += dt;
+      c.actor.update(dt);
+      if (c.t > 1.3) c.root.position.y -= dt * 25;
+      if (c.t > 2.4) { this.scene.remove(c.root); return false; }
+      return true;
+    });
+
     const seenM = new Set();
     for (const pr of g.projs) {
       if (pr.kind !== 'lob') continue;
       seenM.add(pr);
       let mk = this.markers.get(pr);
       if (!mk) { mk = buildMarker(); this.markers.set(pr, mk); this.scene.add(mk); }
-      mk.position.set(pr.tx, 0.6, pr.ty);
+      mk.position.set(pr.tx, 1.5, pr.ty);
       mk.scale.setScalar(0.4 + 0.6 * (pr.t / pr.T));
     }
     for (const [pr, mk] of this.markers) if (!seenM.has(pr)) { this.scene.remove(mk); this.markers.delete(pr); }
@@ -256,169 +472,166 @@ export class Renderer3D {
     this.renderer.render(this.scene, this.camera);
   }
 
-  sync(obj, build, update, seen) {
-    let m = this.meshes.get(obj);
-    if (!m) {
-      m = build();
-      for (const mat of m.userData.mats) { mat.userData.e0 = mat.emissive.clone(); mat.userData.ei0 = mat.emissiveIntensity; mat.userData.o0 = mat.opacity; mat.userData.t0 = mat.transparent; }
-      this.meshes.set(obj, m);
-      this.scene.add(m);
+  sync(obj, make, update, seen) {
+    let v = this.views.get(obj);
+    if (!v) {
+      v = make();
+      this.views.set(obj, v);
+      this.scene.add(v.root);
     }
     seen.add(obj);
-    update(m);
+    update(v);
   }
 
-  flash(m, amount, color = '#ffffff') {
-    const on = amount > 0;
-    if (!on && !m.userData.flashing) return;
-    m.userData.flashing = on;
-    for (const mat of m.userData.mats) {
-      if (on) { mat.emissive.set(color); mat.emissiveIntensity = 0.9; }
-      else { mat.emissive.copy(mat.userData.e0); mat.emissiveIntensity = mat.userData.ei0; }
+  near(x, z, pad = 520) {
+    return Math.abs(x - this.camX) < pad && Math.abs(z - this.camZ) < pad;
+  }
+
+  updateHero(v, p, g, dt) {
+    const st = HERO_STYLE[p.cls];
+    if (!p.alive) {
+      if (!v.dead) { v.dead = true; v.actor.die('Death_A'); v.ring.visible = false; }
+      v.actor.update(dt);
+      return;
     }
-  }
-
-  fade(m, opacity) {
-    if (m.userData.opacity === opacity) return;
-    m.userData.opacity = opacity;
-    for (const mat of m.userData.mats) {
-      mat.transparent = opacity < 1 || mat.userData.t0;
-      mat.opacity = opacity < 1 ? opacity * mat.userData.o0 : mat.userData.o0;
-      mat.needsUpdate = true;
+    if (v.dead) {
+      // continued: fresh actor so the animation state resets
+      this.scene.remove(v.root);
+      Object.assign(v, this.makeHero(p), { dead: false });
+      this.scene.add(v.root);
     }
-  }
+    const a = v.actor;
+    v.root.visible = !(p.invuln > 0 && Math.floor(g.time * 16) % 2);
+    const moved = v.px !== undefined ? Math.hypot(p.x - v.px, p.y - v.py) : 0;
+    v.px = p.x; v.py = p.y;
+    const moving = moved > 0.2 || !!p.dash;
+    v.root.position.set(p.x, 0, p.y);
+    v.root.rotation.y = lerpAngle(v.root.rotation.y, Math.atan2(p.fx, p.fy), 0.3);
+    a.base(moving ? 'Running_A' : st.idle, moving ? Math.max(0.8, (moved / Math.max(dt, 0.001)) / 150) : 1);
+    if (p.act && p.act !== v.lastAct) {
+      v.lastAct = p.act;
+      if (p.act.type === 'melee') a.play(st.melee, { upper: moving, timeScale: st.meleeSpeed });
+      else if (p.act.type === 'shoot') a.play(st.shoot, { upper: true, timeScale: st.shootSpeed });
+      else a.play(st.turbo, { timeScale: 1.6 });
+    }
+    if (p.hurtFlash > 0 && !v.wasHurt && !a.busy) a.play('Hit_A', { upper: true, timeScale: 2 });
+    v.wasHurt = p.hurtFlash > 0;
+    a.flash(p.hurtFlash, '#ff2020');
+    a.update(dt);
+    v.ring.material.opacity = 0.55 + Math.sin(g.time * 5) * 0.25;
 
-  animateWalk(rig, walk, moving, amp = 0.75) {
-    const s = moving ? Math.sin(walk) * amp : 0;
-    if (rig.legL) { rig.legL.rotation.x = s; rig.legR.rotation.x = -s; }
-    if (rig.armL) { rig.armL.rotation.x = -s * 0.8; rig.armR.rotation.x = s * 0.8; }
-    if (rig.rig) rig.rig.position.y = moving ? Math.abs(Math.cos(walk)) * 1.5 : 0;
-  }
-
-  updateHero(m, p, t) {
-    const rig = m.userData.rig;
-    m.visible = p.alive && !(p.invuln > 0 && Math.floor(t * 18) % 2);
-    if (!p.alive) return;
-    m.position.set(p.x, 0, p.y);
-    const target = Math.atan2(p.fx, p.fy);
-    m.rotation.y = lerpAngle(m.rotation.y, target, 0.35);
-    const moving = m.userData.lastWalk !== p.walk;
-    m.userData.lastWalk = p.walk;
-    this.animateWalk(rig, p.walk, moving);
-    if (p.swing > 0) {
-      const k = Math.sin((1 - p.swing / 0.18) * Math.PI);
-      rig.armR.rotation.x = -1.2 - k * 1.6;
-      rig.armR.rotation.z = k * 0.6;
-      if (p.swing > 0.2) m.rotation.y += t * 30; // turbo spin
-    } else if (p.throwT > 0) {
-      rig.armR.rotation.x = -2.6 + (1 - p.throwT / 0.15) * 2;
-      rig.armR.rotation.z = 0;
-    } else rig.armR.rotation.z = 0;
-    if (rig.bow && p.throwT > 0) rig.armL.rotation.x = -1.5;
-    if (rig.orb) rig.orb.material.emissiveIntensity = 1.5 + Math.sin(t * 8) * 0.5;
-    this.flash(m, p.hurtFlash, '#ff2020');
-    // power-up aura
-    let aura = m.userData.aura;
     const buff = Object.keys(p.buffs)[0];
     if (buff) {
-      if (!aura) {
-        aura = new THREE.Mesh(new THREE.SphereGeometry(20, 14, 10), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.18, depthWrite: false, blending: THREE.AdditiveBlending }));
-        aura.position.y = 18;
-        m.add(aura);
-        m.userData.aura = aura;
+      if (!v.aura) {
+        v.aura = new THREE.Mesh(new THREE.SphereGeometry(24, 16, 12), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }));
+        v.aura.position.y = 20;
+        v.root.add(v.aura);
       }
-      aura.visible = true;
-      aura.material.color.set(POWERUPS[buff].color);
-      aura.scale.setScalar(1 + Math.sin(t * 6) * 0.05);
-    } else if (aura) aura.visible = false;
-    // dash streak
-    if (p.dash) m.rotation.x = 0.25; else m.rotation.x = 0;
+      v.aura.visible = true;
+      v.aura.material.color.set(POWERUPS[buff].color);
+      v.aura.scale.setScalar(1 + Math.sin(g.time * 6) * 0.05);
+    } else if (v.aura) v.aura.visible = false;
   }
 
-  updateEnemy(m, e, g, t) {
-    const rig = m.userData.rig;
-    m.position.set(e.x, 0, e.y);
+  updateEnemy(v, e, g, dt) {
+    const a = v.actor;
+    const st = v.style;
+    v.root.position.set(e.x, st.float ? 6 + Math.sin(g.time * 4 + e.phase) * 3 : 0, e.y);
+    const visible = this.near(e.x, e.y);
+    v.root.visible = visible;
+    if (!visible) return;
     const [p] = g.nearestPlayer(e);
-    if (p) m.rotation.y = lerpAngle(m.rotation.y, Math.atan2(p.x - e.x, p.y - e.y), 0.2);
-    const moving = m.userData.lastWalk !== e.walk;
-    m.userData.lastWalk = e.walk;
-    if (rig.float) {
-      rig.rig.position.y = 4 + Math.sin(t * 4 + e.phase) * 3;
-      rig.rig.rotation.z = Math.sin(t * 3 + e.phase) * 0.1;
-    } else this.animateWalk(rig, e.walk, moving, 0.9);
-    if (e.cd > 0 && e.cd < 0.2 && rig.armR) rig.armR.rotation.x = -2.2;
-    if (rig.wings) rig.wings.forEach((w, i) => (w.rotation.y = Math.sin(t * 10 + e.phase) * 0.4 * (i ? -1 : 1)));
-    if (rig.orb) rig.orb.scale.setScalar(1 + Math.sin(t * 10) * 0.3);
-    this.fade(m, e.invisible ? 0.15 : 1);
-    this.flash(m, e.hurt);
-    const s = 1 + (e.hurt > 0 ? 0.12 : 0);
-    m.scale.setScalar(s);
+    if (p) v.root.rotation.y = lerpAngle(v.root.rotation.y, Math.atan2(p.x - e.x, p.y - e.y), 0.18);
+    const moved = v.px !== undefined ? Math.hypot(e.x - v.px, e.y - v.py) : 0;
+    v.px = e.x; v.py = e.y;
+    const moving = moved > 0.15;
+    a.base(moving ? st.walk : 'Idle', moving ? st.walkSpeed : 1);
+    if (e.act && e.act !== v.lastAct) {
+      v.lastAct = e.act;
+      const clip = e.act.type === 'throw' ? 'Throw' : e.act.type === 'cast' ? 'Spellcast_Shoot' : '1H_Melee_Attack_Chop';
+      a.play(clip, { upper: moving, timeScale: 2 });
+    }
+    if (e.hurt > 0 && !v.wasHurt && !a.busy) a.play('Hit_B', { upper: true, timeScale: 2.2 });
+    v.wasHurt = e.hurt > 0;
+    a.fade(e.invisible ? 0.15 : 1);
+    a.flash(e.hurt);
+    a.update(dt);
   }
 
-  updateBoss(m, e, g, t) {
-    const rig = m.userData.rig;
-    m.position.set(e.x, 0, e.y);
+  updateBoss(v, e, g, dt) {
+    const t = g.time;
+    v.root.position.set(e.x, 0, e.y);
     const [p] = g.nearestPlayer(e);
-    if (p && !(e.charging > 0)) m.rotation.y = lerpAngle(m.rotation.y, Math.atan2(p.x - e.x, p.y - e.y), 0.08);
-    else if (e.charging > 0) m.rotation.y = Math.atan2(e.cvx, e.cvy);
-    const moving = m.userData.lastWalk !== e.walk;
-    m.userData.lastWalk = e.walk;
+    if (e.charging > 0) v.root.rotation.y = Math.atan2(e.cvx, e.cvy);
+    else if (p) v.root.rotation.y = lerpAngle(v.root.rotation.y, Math.atan2(p.x - e.x, p.y - e.y), 0.08);
+    const moved = v.px !== undefined ? Math.hypot(e.x - v.px, e.y - v.py) : 0;
+    v.px = e.x; v.py = e.y;
+    const moving = moved > 0.15;
+    const hurtColor = e.hp < e.maxHp * 0.4 ? '#ff4020' : '#ffffff';
+    if (v.actor) {
+      const a = v.actor;
+      a.base(e.charging > 0 ? 'Running_A' : moving ? 'Walking_A' : 'Idle', e.charging > 0 ? 1.6 : 1);
+      if (e.act && e.act !== v.lastAct) {
+        v.lastAct = e.act;
+        a.play(e.act.type === 'cast' ? 'Spellcast_Long' : '2H_Melee_Attack_Chop', { upper: moving, timeScale: 1.6 });
+      }
+      a.flash(e.hurt, hurtColor);
+      a.update(dt);
+      return;
+    }
+    const rig = v.root.userData.rig;
     rig.wings.forEach((w, i) => (w.rotation.y = Math.sin(t * 5) * 0.5 * (i ? -1 : 1)));
-    if (rig.legs) rig.legs.forEach((l, i) => (l.rotation.x = moving ? Math.sin(e.walk * 0.8 + i * Math.PI / 2) * 0.5 : Math.sin(t * 2 + i) * 0.1));
+    if (rig.legs) rig.legs.forEach((l, i) => (l.rotation.x = moving ? Math.sin(t * 8 + i * Math.PI / 2) * 0.5 : Math.sin(t * 2 + i) * 0.1));
     rig.heads.forEach((h, i) => {
       h.rotation.y = Math.sin(t * 1.5 + i * 2) * 0.3;
       if (h.userData.jaw) h.userData.jaw.rotation.x = e.cd2 < 0.4 ? 0.6 : Math.max(0, Math.sin(t * 3)) * 0.15;
     });
     if (rig.tail) rig.tail.rotation.y = Math.sin(t * 2) * 0.4;
-    if (rig.humanoid) {
-      this.animateWalk(rig.humanoid, e.walk * 0.6, moving, 0.6);
-      if (e.cd < 0.3) rig.humanoid.armR.rotation.x = -2.4;
-    }
     rig.rig.rotation.x = e.charging > 0 ? 0.25 : 0;
-    m.scale.setScalar(e.hurt > 0 ? 1.04 : 1);
-    this.flash(m, e.hurt, e.hp < e.maxHp * 0.4 ? '#ff4020' : '#ffffff');
+    const on = e.hurt > 0;
+    for (const m of v.root.userData.mats) {
+      if (on) { m.emissive.set(hurtColor); m.emissiveIntensity = 0.8; } else { m.emissive.copy(m.userData.e0); m.emissiveIntensity = m.userData.ei0; }
+    }
   }
 
-  updateGen(m, gen, t) {
-    m.position.set(gen.x, 0, gen.y);
+  updateGen(v, gen, t) {
+    v.root.position.set(gen.x, 0, gen.y);
     const tier = Math.ceil(gen.hp / 15);
-    m.scale.setScalar(0.62 + tier * 0.14);
-    const { core, halo } = m.userData;
+    v.root.scale.setScalar(0.6 + tier * 0.15);
     const pulse = 0.5 + Math.sin(t * 5 + gen.x) * 0.5;
-    core.material.emissiveIntensity = 1.2 + pulse * 2;
-    halo.material.opacity = 0.3 + pulse * 0.35;
-    this.flash(m, gen.hurt);
+    v.halo.material.opacity = 0.25 + pulse * 0.4;
+    const on = gen.hurt > 0;
+    for (const m of v.mats) {
+      if (on) { m.emissive.set('#ffffff'); m.emissiveIntensity = 0.7; } else { m.emissive.copy(m.userData.e0); m.emissiveIntensity = 0; }
+    }
   }
 
-  updateItem(m, it, t) {
-    m.position.set(it.x, Math.sin(it.bob) * 1.5 + 1.5, it.y);
-    if (m.userData.spins) m.userData.spin.rotation.y = t * 2 + it.bob;
+  updateItem(v, it, t) {
+    v.root.position.set(it.x, 0, it.y);
+    if (v.spin) {
+      v.spin.position.y = Math.sin(it.bob) * 1.5 + 1.5;
+      if (v.spins) v.spin.rotation.y = t * 2 + it.bob;
+    }
   }
 
-  updateProj(m, pr, t) {
+  updateProj(v, pr, t) {
     if (pr.kind === 'lob') {
-      m.position.set(pr.x, 14 + pr.z, pr.y);
-      m.userData.spin.rotation.set(t * 8, t * 6, 0);
+      v.root.position.set(pr.x, 14 + pr.z, pr.y);
+      v.spin.rotation.set(t * 8, t * 6, 0);
       return;
     }
-    m.position.set(pr.x, 16, pr.y);
+    v.root.position.set(pr.x, 18, pr.y);
     const ang = Math.atan2(pr.vx, pr.vy);
-    if (pr.kind === 'axe' || pr.kind === 'sword') {
-      m.rotation.y = ang;
-      m.userData.spin.rotation.y = pr.spin;
-    } else if (pr.kind === 'arrow') {
-      m.rotation.y = ang;
-    } else {
-      m.userData.spin.rotation.set(t * 9, t * 7, 0);
-    }
+    if (pr.kind === 'axe' || pr.kind === 'sword') { v.root.rotation.y = ang; v.spin.rotation.y = pr.spin; }
+    else if (pr.kind === 'arrow') v.root.rotation.y = ang;
+    else v.spin.rotation.set(t * 9, t * 7, 0);
   }
 
-  syncLevel(g, t, cx, cz) {
-    // doors opened by keys sink into the floor
+  syncLevel(g, t) {
     for (const [idx, d] of this.doors) {
       if (g.tiles[idx] !== T.DOOR) {
         d.position.y -= 2.5;
-        if (d.position.y < -45) { this.levelGroup.remove(d); this.doors.delete(idx); }
+        if (d.position.y < -WALL_H) { this.levelGroup.remove(d); this.doors.delete(idx); }
       }
     }
     const ex = g.level.exit;
@@ -430,30 +643,26 @@ export class Renderer3D {
       this.exit.userData.halo.material.opacity = 0.6;
     }
     this.exit.userData.disk.rotation.z = -t * 2.5;
-    for (const torch of this.torches) {
-      const f = 1 + Math.sin(t * 17 + torch.position.x) * 0.12 + Math.sin(t * 29 + torch.position.z) * 0.08;
-      torch.userData.flame.scale.set(f, f * 1.15, f);
-      torch.userData.halo.scale.setScalar(30 * f);
-    }
+    for (const tc of this.torches) tc.halo.scale.setScalar(44 * (1 + Math.sin(t * 17 + tc.x) * 0.1 + Math.sin(t * 29 + tc.z) * 0.06));
   }
 
   syncLights(g, t, cx, cz) {
     const sorted = this.torches
-      .map((tch) => ({ tch, d: (tch.position.x - cx) ** 2 + (tch.position.z - cz) ** 2 }))
+      .map((tc) => ({ tc, d: (tc.x - cx) ** 2 + (tc.z - cz) ** 2 }))
       .sort((a, b) => a.d - b.d);
     this.torchLights.forEach((l, i) => {
       const s = sorted[i];
-      if (!s || s.d > 900 * 900) { l.intensity = 0; return; }
-      l.position.set(s.tch.position.x, 46, s.tch.position.z + 16);
-      l.intensity = 95 * (1 + Math.sin(t * 13 + i * 3) * 0.08);
+      if (!s || s.d > 800 * 800) { l.intensity = 0; return; }
+      l.position.set(s.tc.x, 46, s.tc.z + 10);
+      l.intensity = 110 * (1 + Math.sin(t * 13 + i * 3) * 0.08);
     });
     const ps = g.allPlayers();
     this.playerLights.forEach((l, i) => {
       const p = ps[i];
       if (!p || !p.alive) { l.intensity = 0; return; }
-      l.color.set(heroColor(p.cls)).lerp(this.tmpColor.set('#ffffff'), 0.6);
+      l.color.set(heroColor(p.cls)).lerp(this.tmpColor.set('#ffffff'), 0.65);
       l.position.set(p.x, 60, p.y + 10);
-      l.intensity = 70;
+      l.intensity = 60;
     });
     const ex = g.level.exit;
     this.exitLight.position.set(ex.x * TILE + 16, 30, ex.y * TILE + 16);
@@ -466,7 +675,7 @@ export class Renderer3D {
       const p = g.particles[i];
       const k = Math.max(0, p.life / p.max);
       this.pPos[i * 3] = p.x;
-      this.pPos[i * 3 + 1] = 10 + (1 - k) * 10;
+      this.pPos[i * 3 + 1] = 12 + (1 - k) * 12;
       this.pPos[i * 3 + 2] = p.y;
       this.tmpColor.set(p.color);
       this.pCol[i * 3] = this.tmpColor.r * k * 1.4;
@@ -479,9 +688,8 @@ export class Renderer3D {
     geo.attributes.color.needsUpdate = true;
   }
 
-  // World position -> overlay canvas coordinates.
   toScreen(x, y, h = 0) {
-    const v = new THREE.Vector3(x, h, y).project(this.camera);
+    const v = this.tmpV.set(x, h, y).project(this.camera);
     return { x: (v.x + 1) / 2 * VIEW_W, y: (1 - v.y) / 2 * VIEW_H, visible: v.z < 1 };
   }
 
@@ -489,74 +697,90 @@ export class Renderer3D {
 
   renderShowcase(entries, time) {
     if (!this.showcase) this.buildShowcase();
-    const S = this.showcase;
+    const SC = this.showcase;
+    const dt = Math.min(0.05, Math.max(0, time - (SC.last ?? time)));
+    SC.last = time;
     const seen = new Set();
     entries.forEach((en, i) => {
       const key = `${i}:${en.cls}`;
       seen.add(key);
-      let hero = S.heroes.get(key);
-      if (!hero) { hero = buildHero(en.cls); S.heroes.set(key, hero); S.scene.add(hero); }
-      hero.visible = true;
-      const ndc = new THREE.Vector3((en.sx / VIEW_W) * 2 - 1, -(en.sy / VIEW_H) * 2 + 1, 0.5).unproject(S.camera);
-      const dir = ndc.sub(S.camera.position).normalize();
-      const dist = -S.camera.position.z / dir.z;
-      const pos = S.camera.position.clone().add(dir.multiplyScalar(dist));
-      hero.position.copy(pos);
-      hero.scale.setScalar(en.scale);
-      hero.rotation.y = en.turn ?? Math.sin(time * 0.8 + i) * 0.5;
-      const rig = hero.userData.rig;
-      this.animateWalk(rig, time * 9, !!en.walk);
-      if (rig.orb) rig.orb.material.emissiveIntensity = 1.5 + Math.sin(time * 8) * 0.5;
-      if (en.cheer) rig.armR.rotation.x = -2.6 + Math.sin(time * 6) * 0.2;
-      else if (!en.walk) rig.armR.rotation.x = 0;
+      let h = SC.heroes.get(key);
+      if (!h) {
+        h = new Actor(en.cls);
+        h.base(HERO_STYLE[en.cls].idle);
+        SC.heroes.set(key, h);
+        SC.scene.add(h.root);
+      }
+      h.root.visible = true;
+      const ndc = new THREE.Vector3((en.sx / VIEW_W) * 2 - 1, -(en.sy / VIEW_H) * 2 + 1, 0.5).unproject(SC.camera);
+      const dir = ndc.sub(SC.camera.position).normalize();
+      const dist = -SC.camera.position.z / dir.z;
+      h.root.position.copy(SC.camera.position).add(dir.multiplyScalar(dist));
+      h.root.scale.setScalar(en.scale);
+      h.root.rotation.y = en.turn ?? 0;
+      if (en.cheer && !h.cheered) { h.cheered = true; h.base('Cheer'); }
+      else if (!en.cheer && h.cheered) { h.cheered = false; h.base(HERO_STYLE[en.cls].idle); }
+      h.update(dt);
     });
-    for (const [k, h] of S.heroes) if (!seen.has(k)) h.visible = false;
-    S.torches.forEach((tch, i) => {
-      const f = 1 + Math.sin(time * 17 + i) * 0.12;
-      tch.userData.flame.scale.set(f, f * 1.15, f);
-      S.lights[i].intensity = 160 * (1 + Math.sin(time * 13 + i * 3) * 0.08);
-    });
-    this.renderer.render(S.scene, S.camera);
+    for (const [k, h] of SC.heroes) if (!seen.has(k)) h.root.visible = false;
+    SC.halos.forEach((hl, i) => hl.scale.setScalar(120 * (1 + Math.sin(time * 17 + i) * 0.1)));
+    SC.lights.forEach((l, i) => (l.intensity = 170 * (1 + Math.sin(time * 13 + i * 3) * 0.08)));
+    this.renderer.render(SC.scene, SC.camera);
   }
 
   buildShowcase() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#0a0806');
-    scene.fog = new THREE.Fog('#0a0806', 300, 700);
+    scene.fog = new THREE.Fog('#0a0806', 400, 900);
     const camera = new THREE.PerspectiveCamera(32, VIEW_W / VIEW_H, 5, 2000);
-    camera.position.set(0, 60, 380);
-    camera.lookAt(0, 40, 0);
-    scene.add(new THREE.HemisphereLight('#ffd0a0', '#201008', 0.9));
-    const key = new THREE.DirectionalLight('#ffe0c0', 1.4);
-    key.position.set(-120, 300, 300);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    Object.assign(key.shadow.camera, { left: -300, right: 300, top: 200, bottom: -200 });
+    camera.position.set(0, 70, 420);
+    camera.lookAt(0, 50, 0);
+    scene.add(new THREE.HemisphereLight('#ffd8b0', '#201008', 1.2));
+    const key = new THREE.DirectionalLight('#ffe0c0', 1.6);
+    key.position.set(-150, 300, 400);
     scene.add(key);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(1400, 600), new THREE.MeshStandardMaterial({ map: floorTexture('#5a4a3a'), roughness: 0.9 }));
-    floor.material.map.repeat.set(10, 5);
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -40;
-    floor.receiveShadow = true;
-    scene.add(floor);
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(1400, 500), new THREE.MeshStandardMaterial({ map: wallTexture('#6a5a4a'), roughness: 0.9 }));
-    wall.material.map.repeat.set(8, 3);
-    wall.position.set(0, 160, -160);
-    wall.receiveShadow = true;
-    scene.add(wall);
-    const torches = [], lights = [];
+    const floorTiles = [], wallList = [];
+    for (let x = -12; x <= 12; x++) for (let z = -6; z <= 6; z++) floorTiles.push({ x: x * 64, z: z * 64, ry: ((x * 7 + z * 3) & 3) * Math.PI / 2, sx: S * 2, sy: S * 2, sz: S * 2 });
+    for (let x = -8; x <= 8; x++) wallList.push({ x: x * 128, z: -170, sx: S * 2, sy: S * 2, sz: S * 2 });
+    const g = new THREE.Group();
+    this.instanced(g, 'floor', floorTiles);
+    this.instanced(g, 'wall', wallList);
+    g.position.y = -2;
+    scene.add(g);
+    const lights = [], halos = [];
     for (const x of [-330, -110, 110, 330]) {
-      const tch = buildTorch();
-      tch.scale.setScalar(2.2);
-      tch.position.set(x, 130, -160);
+      const tch = cloneProp('torch');
+      tch.scale.setScalar(S * 2.2);
+      tch.position.set(x, 120, -154);
       scene.add(tch);
-      torches.push(tch);
-      const l = new THREE.PointLight('#ff9a50', 160, 500, 1);
-      l.position.set(x, 160, -110);
+      const halo = glowSprite('#ffa040', 120, 0.8);
+      halo.position.set(x, 150, -130);
+      scene.add(halo);
+      halos.push(halo);
+      const l = new THREE.PointLight('#ff9a50', 170, 520, 1);
+      l.position.set(x, 160, -100);
       scene.add(l);
       lights.push(l);
     }
-    this.showcase = { scene, camera, heroes: new Map(), torches, lights };
+    for (const [x, k] of [[-470, 'barrel_stack'], [470, 'crates'], [-560, 'keg'], [560, 'barrel_stack']]) {
+      const p = cloneProp(k);
+      p.scale.setScalar(S * 1.6);
+      p.position.set(x, 0, -110);
+      scene.add(p);
+    }
+    this.showcase = { scene, camera, heroes: new Map(), lights, halos };
+  }
+}
+
+function addHorns(actor, color, r, len, spread) {
+  const head = actor.bone('head');
+  if (!head) return;
+  const hm = new THREE.MeshStandardMaterial({ color, flatShading: true });
+  for (const s of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(r, len, 6), hm);
+    horn.position.set(s * spread, 0.95, 0);
+    horn.rotation.z = -s * 0.6;
+    head.add(horn);
   }
 }
 

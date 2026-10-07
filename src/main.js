@@ -5,7 +5,8 @@ import { Input } from './input.js';
 import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
-import { drawGameOverlay, drawTitle, drawSelect, drawOverlay, titleShowcase, selectShowcase } from './hud.js';
+import { loadAssets } from './assets.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, titleShowcase, selectShowcase } from './hud.js';
 import { levelInfo } from './level.js';
 
 const stage = document.getElementById('stage');
@@ -27,7 +28,10 @@ let showMinimap = false;
 
 const input = new Input();
 let game = null;
-let state = 'title';
+let state = 'loading';
+let loadProgress = 0;
+let loadError = null;
+loadAssets((p) => (loadProgress = p)).then(() => setState('title')).catch((err) => { loadError = err; console.error(err); });
 let stateT = 0;
 let slots = [];       // character select: { source, cls, ready }
 let countdown = null;
@@ -171,7 +175,9 @@ function updateGameOver() {
 
 function render() {
   ctx.textBaseline = 'alphabetic';
-  if (state === 'title') {
+  if (state === 'loading') {
+    drawLoading(ctx, loadProgress, loadError);
+  } else if (state === 'title') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
     drawTitle(ctx, stateT, hiscores);
   } else if (state === 'select') {

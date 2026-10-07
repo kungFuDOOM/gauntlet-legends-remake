@@ -52,7 +52,7 @@ export const ENEMIES = {
 };
 
 export const GENERATOR_HP = 45; // three tiers of 15
-export const MAX_ENEMIES = 140;
+export const MAX_ENEMIES = 110;
 
 export const POWERUPS = {
   speed:  { name: 'Speed Boots',      color: '#4ad9d9', dur: 20 },

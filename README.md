@@ -2,7 +2,9 @@
 
 A fan-made remake of the 1998 arcade classic **Gauntlet Legends** that runs in the browser in 3D. Like the original, it has a 3/4 overhead camera that follows the party through torch-lit 3D dungeons, low-poly heroes and monsters, and stat panels in the corners of the screen.
 
-It is plain JavaScript with no build step. The only library is [three.js](https://threejs.org), included in `vendor/` (MIT licensed). All models, textures and sounds are generated in code, so the repo contains none of the original game's assets.
+It is plain JavaScript with no build step. The only library is [three.js](https://threejs.org), included in `vendor/` (MIT licensed).
+
+The heroes, monsters and dungeon are animated 3D models from Kay Lousberg's free **CC0** KayKit packs (see [`assets/CREDITS.md`](assets/CREDITS.md)). A few things the packs don't cover (three of the bosses, magic pickups, effects) are built in code. Sounds are synthesized. None of the original game's art, models, audio or levels are used.
 
 > Fan project. Not affiliated with or endorsed by the owners of the Gauntlet trademark.
 
@@ -43,7 +45,8 @@ Up to **4 players** can play co-op on one screen. Press Attack on any unused key
 - **RPG progression.** Kills give experience; levelling up raises strength, shot damage, armor, speed and magic.
 - **Amulets** give temporary powers: Speed, Rapid Fire, Invulnerability and Triple Shot. Treasure chests drop random loot.
 - **Four realms** with the original's stage names (Valley of Fire, Dagger Peak, Castle Courtyard, ...). Each realm has 3 procedurally generated dungeons followed by a **boss fight** against the Dragon, the Chimera, the Plague Fiend or Skorne. Bosses breathe fire in every direction, charge and summon minions; defeating one earns a Rune Stone.
-- **Breakable barrels and treasure chests**, doors that sink into the floor when unlocked, and a swirling exit portal.
+- **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
+- **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
 - **Arcade announcer** via your browser's speech synthesis ("Warrior needs food, badly!"). Also: a shared camera that keeps the party together, a minimap of explored areas, a high score table, and drop-in "continue" after dying.
 
 ## Project layout
@@ -56,13 +59,28 @@ src/game.js       simulation: players, enemies and their AI, generators, project
 src/level.js      procedural dungeon and boss arena generation (pure, testable)
 src/render3d.js   three.js renderer: builds level geometry from the tile map, lighting and shadows,
                   camera, and keeps a 3D model in sync with every entity
-src/models.js     procedural low-poly models (heroes, monsters, bosses, items) and textures
+src/assets.js     loads the KayKit models; Actor = animated character with separate upper/lower-body actions
+src/models.js     procedural models for the Dragon, Chimera and Plague Fiend, magic pickups, effects
 src/hud.js        2D overlay: corner player panels, floating text, banners, menus
-vendor/           three.js (MIT)
+vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder (MIT)
+assets/models/    CC0 KayKit models, prepared by tools/build-assets.mjs
 src/input.js      keyboard and gamepad input sources
 src/audio.js      synthesized sound effects and announcer
 src/config.js     tuning tables for classes, enemies and power-ups
 test/             node:test suite (level generation and solvability)
+```
+
+## Rebuilding the 3D assets
+
+The prepared models are committed, so this is only needed to change which models are used:
+
+```bash
+npm install
+git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0 kaykit/KayKit-Character-Pack-Adventures-1.0
+git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0  kaykit/KayKit-Character-Pack-Skeletons-1.0
+git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0        kaykit/KayKit-Dungeon-Remastered-1.0
+git clone --depth 1 https://github.com/KayKit-Game-Assets/KayKit-Halloween-Bits-1.0            kaykit/KayKit-Halloween-Bits-1.0
+npm run build-assets -- kaykit
 ```
 
 ## Tests

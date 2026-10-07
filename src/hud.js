@@ -278,6 +278,23 @@ function drawMinimap(ctx, g) {
 
 // ---------- menus (drawn over the 3D showcase) ----------
 
+export function drawLoading(ctx, progress, error) {
+  ctx.fillStyle = '#0a0806';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.textAlign = 'center';
+  ctx.font = `bold 40px ${SERIF}`;
+  outlined(ctx, 'GAUNTLET LEGENDS', VIEW_W / 2, 280, '#f2c14e', '#000', 5);
+  const w = 360, x = (VIEW_W - w) / 2, y = 320;
+  ctx.fillStyle = '#2a1e10';
+  ctx.fillRect(x, y, w, 12);
+  ctx.fillStyle = '#f2c14e';
+  ctx.fillRect(x, y, w * progress, 12);
+  ctx.strokeStyle = '#a07a30';
+  ctx.strokeRect(x - 0.5, y - 0.5, w + 1, 13);
+  ctx.font = `14px ${SANS}`;
+  outlined(ctx, error ? `Failed to load assets: ${error.message}` : 'Loading the realm...', VIEW_W / 2, y + 40, error ? '#ff6050' : '#d8c8a0', '#000', 3);
+}
+
 export function titleShowcase(time) {
   return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 440, scale: 1.6, turn: Math.sin(time * 0.7 + i) * 0.35 }));
 }

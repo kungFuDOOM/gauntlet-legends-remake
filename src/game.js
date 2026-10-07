@@ -403,6 +403,7 @@ export class Game {
     }
     if (targets.length) {
       p.swing = 0.18;
+      p.act = { type: 'melee', t: this.time };
       p.shotCd = cd * 1.1;
       sfx.melee();
       targets.slice(0, 3).forEach((t) => (t.kind === 'enemy' ? this.damageEnemy(t, p.strength, p, true) : this.damageGen(t, p.strength * 0.6, p)));
@@ -410,6 +411,7 @@ export class Game {
     }
     const angles = p.buffs.triple ? [-0.22, 0, 0.22] : [0];
     p.throwT = 0.15;
+    p.act = { type: 'shoot', t: this.time };
     for (const a of angles) this.fire(p, Math.atan2(p.fy, p.fx) + a, {});
     sfx.shoot(p.def.shot);
   }
@@ -423,6 +425,7 @@ export class Game {
   }
 
   turboAttack(p) {
+    p.act = { type: 'turbo', t: this.time };
     p.turbo -= TURBO_COST;
     p.shotCd = 0.5;
     sfx.turbo();
@@ -486,6 +489,12 @@ export class Game {
     sfx.hit();
     this.burst(e.x, e.y, e.type === 'ghost' ? '#e0e8ff' : '#b02020', 4, 80);
     if (e.type === 'boss') this.shake = Math.max(this.shake, 2);
+    else if (melee && p) {
+      // melee hits shove the target back and jolt the camera a little
+      const d = dist(p, e) || 1;
+      this.move(e, ((e.x - p.x) / d) * 7, ((e.y - p.y) / d) * 7);
+      this.shake = Math.max(this.shake, 2.5);
+    }
     if (e.hp <= 0) this.onEnemyKilled(e, p);
   }
 
@@ -545,7 +554,7 @@ export class Game {
     const x = g.x + Math.cos(a) * 26, y = g.y + Math.sin(a) * 26;
     const r = ENEMIES[g.type].r;
     if (!this.collides(x, y, r)) {
-      this.spawnEnemy(g.type, x, y);
+      this.spawnEnemy(g.type, x, y).fromGen = true;
       this.burst(x, y, '#6a5a8a', 5, 60);
     }
   }
@@ -605,20 +614,21 @@ export class Game {
     switch (def.ai) {
       case 'melee':
         if (!contact) this.steer(e, p, d, dt);
-        else if (e.cd <= 0) { e.cd = 0.7; this.hurtPlayer(p, def.dmg, e); }
+        else if (e.cd <= 0) { e.cd = 0.7; e.act = { type: 'melee', t: this.time }; this.hurtPlayer(p, def.dmg, e); }
         break;
       case 'kamikaze':
         if (!contact) this.steer(e, p, d, dt);
-        else { this.hurtPlayer(p, def.dmg, e); e.hp = 0; this.burst(e.x, e.y, '#e0e8ff', 12, 120); }
+        else { this.hurtPlayer(p, def.dmg, e); e.hp = 0; e.vanish = true; this.burst(e.x, e.y, '#e0e8ff', 12, 120); }
         break;
       case 'death':
         if (!contact) this.steer(e, p, d, dt);
         else if (e.cd <= 0) {
           e.cd = 0.1;
+          if (!e.act || this.time - e.act.t > 1) e.act = { type: 'melee', t: this.time };
           if (p.invuln <= 0 && !p.buffs.shield) {
             p.hp -= 3; e.drained += 3; p.hurtFlash = 0.1;
             if (p.hp <= 0) this.killPlayer(p);
-            if (e.drained >= 180) { e.hp = 0; this.burst(e.x, e.y, '#333', 20, 120); this.text(e.x, e.y - 20, 'Death vanishes...', '#aaa', 1.5); }
+            if (e.drained >= 180) { e.hp = 0; e.vanish = true; this.burst(e.x, e.y, '#333', 20, 120); this.text(e.x, e.y - 20, 'Death vanishes...', '#aaa', 1.5); }
           }
           say('Death!', 'death', 10000);
         }
@@ -628,6 +638,7 @@ export class Game {
         else if (d > def.range) this.steer(e, p, d, dt);
         if (d < def.range + 40 && e.cd <= 0) {
           e.cd = def.cooldown * rand(0.8, 1.2);
+          e.act = { type: 'throw', t: this.time };
           this.projs.push({ owner: 'enemy', kind: 'lob', x: e.x, y: e.y, sx: e.x, sy: e.y, tx: p.x + rand(-20, 20), ty: p.y + rand(-20, 20), t: 0, T: 1.0, dmg: def.dmg, r: 6, z: 0 });
         }
         break;
@@ -638,11 +649,12 @@ export class Game {
           e.invisible = cycle > 2.6;
         }
         if (contact) {
-          if (e.cd <= 0) { e.cd = 0.8; this.hurtPlayer(p, def.dmg, e); }
+          if (e.cd <= 0) { e.cd = 0.8; e.act = { type: 'melee', t: this.time }; this.hurtPlayer(p, def.dmg, e); }
         } else {
           const los = d < def.range && this.lineOfSight(e, p);
           if (los && e.cd <= 0 && !e.invisible) {
             e.cd = def.cooldown * rand(0.8, 1.2);
+            e.act = { type: 'cast', t: this.time };
             this.enemyShot(e, Math.atan2(p.y - e.y, p.x - e.x), def.ai === 'sorcerer' ? 'bolt' : 'efire', def.dmg, 230);
           }
           if (!los || d > 140) this.steer(e, p, d, dt);
@@ -669,11 +681,12 @@ export class Game {
       for (const q of this.livePlayers()) if (dist(q, e) < e.r + q.r) this.hurtPlayer(q, 40, e);
       return;
     }
-    if (contact && e.cd <= 0) { e.cd = 0.9; this.hurtPlayer(p, e.def.dmg, e); }
+    if (contact && e.cd <= 0) { e.cd = 0.9; e.act = { type: 'melee', t: this.time }; this.hurtPlayer(p, e.def.dmg, e); }
     else if (!contact) this.steer(e, p, d, dt);
     // Radial fire burst
     if (e.cd2 <= 0) {
       e.cd2 = enraged ? 2.2 : 3.4;
+      e.act = { type: 'cast', t: this.time };
       const n = enraged ? 20 : 14;
       const off = Math.random();
       for (let i = 0; i < n; i++) this.enemyShot(e, ((i + off) / n) * Math.PI * 2, 'efire', 18, 200);
@@ -691,7 +704,7 @@ export class Game {
           const a = Math.random() * Math.PI * 2;
           const x = e.x + Math.cos(a) * 50, y = e.y + Math.sin(a) * 50;
           const kind = kinds[Math.floor(Math.random() * (Math.min(this.info.realm, 3) + 1))];
-          if (!this.collides(x, y, 12)) this.spawnEnemy(kind, x, y);
+          if (!this.collides(x, y, 12)) this.spawnEnemy(kind, x, y).fromGen = true;
         }
         this.burst(e.x, e.y, '#a080ff', 20, 160);
       }
