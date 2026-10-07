@@ -36,13 +36,14 @@ To keep the repository private instead, connect it to a free static host such as
 
 | | Move | Attack | Magic potion | Turbo (hold + attack) |
 |---|---|---|---|---|
-| **Player 1** (keyboard) | WASD | Space / F | E / G | Left Shift / Q |
-| **Player 2** (keyboard) | Arrows | Enter / `/` | `.` / `'` | Right Shift / `,` |
+| **Keyboard** (one player) | WASD or Arrows | Space / F / Enter | E / G / `.` | Left Shift / Q / Right Shift |
+| **Shared keyboard, player 1** | WASD | Space / F | E / G | Left Shift / Q |
+| **Shared keyboard, player 2** | Arrows | Enter / `/` | `.` / `'` | Right Shift / `,` |
 | **Gamepads** (up to 4) | Stick / D-pad | A / RT | B / Y | X / RB + A |
 
 `P`/`Esc`/Start pauses · `M` mutes sound · `N` toggles music · `V` turns the announcer on or off · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
 
-Up to **4 players** can play co-op on one screen. Press Attack on any unused keyboard or gamepad to join, even in the middle of a level.
+Up to **4 players** can play co-op on one screen. On your own, every key above (and the touch screen, if you have one) controls your hero. Gamepads join by pressing Attack, even in the middle of a level. For two players on one keyboard, press **2**: player 1 keeps WASD and player 2 gets the arrow keys.
 
 ## The quest
 

@@ -117,7 +117,8 @@ function drawPanel(ctx, g, slot) {
     frame(ctx, x, y + PANEL_H - 30, PANEL_W, 30, '#888');
     ctx.font = `bold 12px ${SANS}`;
     ctx.textAlign = 'center';
-    outlined(ctx, `PLAYER ${slot + 1}: PRESS ATTACK TO JOIN`, x + PANEL_W / 2, y + PANEL_H - 11, '#e8d8a8', '#000', 3);
+    const how = document.body.classList.contains('touching') ? 'GAMEPAD ATTACK TO JOIN' : 'GAMEPAD OR KEY 2 TO JOIN';
+    outlined(ctx, `P${slot + 1}: ${how}`, x + PANEL_W / 2, y + PANEL_H - 11, '#e8d8a8', '#000', 3);
     ctx.globalAlpha = 1;
     return;
   }
@@ -419,7 +420,7 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
   ctx.font = `13px ${SANS}`;
   const help = document.body.classList.contains('touching')
     ? 'Tap ◀ ▶ to change hero · ATTACK: ready · MAGIC: back'
-    : 'Left/Right or click ◀ ▶: choose · Attack: ready · Magic: back · Other players press Attack to join';
+    : 'Left/Right or click ◀ ▶: choose · Attack: ready · Magic: back';
   outlined(ctx, help, VIEW_W / 2, 92, '#e0d4b8', '#000', 3);
 
   for (let s = 0; s < MAX_PLAYERS; s++) {
@@ -437,6 +438,12 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
     outlined(ctx, `PLAYER ${s + 1}`, x + SEL_W / 2, y + 24, '#f0e0b0', '#000', 3);
     if (!slot) {
       if (Math.floor(time * 2) % 2) outlined(ctx, 'PRESS ATTACK', x + SEL_W / 2, y + 230, '#c8b890', '#000', 3);
+      if (!document.body.classList.contains('touching')) {
+        ctx.font = `12px ${SANS}`;
+        outlined(ctx, 'on a gamepad to join,', x + SEL_W / 2, y + 256, '#a89878', '#000', 2);
+        outlined(ctx, 'or press 2 to share the keyboard', x + SEL_W / 2, y + 274, '#a89878', '#000', 2);
+        ctx.font = `bold 15px ${SANS}`;
+      }
       continue;
     }
     ctx.font = `11px ${SANS}`;

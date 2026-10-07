@@ -77,7 +77,31 @@ function saveScores(g) {
 }
 let hiscores = loadScores();
 
-function setState(s) { if (window.__traceStates) console.log(`state ${state} -> ${s}`); state = s; stateT = 0; }
+function setState(s) {
+  if (window.__traceStates) console.log(`state ${state} -> ${s}`);
+  if (s === 'title') input.split = false; // a new party starts with one keyboard player
+  state = s; stateT = 0;
+}
+
+// A second player on the same keyboard joins with the 2 key: player 1 keeps WASD (and the
+// touch controls) as 'kb1', the newcomer gets the arrow keys as 'kb2'. Returns true if the
+// keyboard was split. `owners` are the slots or players holding input sources.
+function splitKeyboard(owners) {
+  const kbOwner = owners.find((o) => o && o.source === 'kb');
+  if (input.split || !kbOwner || !input.key('Digit2')) return false;
+  input.split = true;
+  kbOwner.source = 'kb1';
+  return true;
+}
+
+// Undo the split once only one keyboard player is left.
+function unsplitKeyboard(owners) {
+  if (!input.split) return;
+  const kbOwners = owners.filter((o) => o && (o.source === 'kb1' || o.source === 'kb2'));
+  if (kbOwners.length > 1) return;
+  input.split = false;
+  if (kbOwners[0]) kbOwners[0].source = 'kb';
+}
 
 function usedSources() { return slots.filter(Boolean).map((s) => s.source); }
 
@@ -152,8 +176,16 @@ function updateSelect(dt) {
     const s = hit && slots[hit.slot];
     if (s && !s.ready) { initAudio(); cycleClass(s, hit.dir); countdown = null; }
   }
+  const full = slots.filter(Boolean).length >= MAX_PLAYERS;
+  if (!full && splitKeyboard(slots)) {
+    const idx = [0, 1, 2, 3].find((i) => !slots[i]);
+    slots[idx] = { source: 'kb2', cls: nextFreeClass(slots.filter(Boolean).map((s) => s.cls)), ready: false };
+    sfx.join();
+    countdown = null;
+    return;
+  }
   const joiner = input.firstPressed('attack', usedSources());
-  if (joiner && slots.filter(Boolean).length < MAX_PLAYERS) {
+  if (joiner && !full) {
     const idx = [0, 1, 2, 3].find((i) => !slots[i]);
     slots[idx] = { source: joiner, cls: nextFreeClass(slots.filter(Boolean).map((s) => s.cls)), ready: false };
     sfx.join();
@@ -170,6 +202,7 @@ function updateSelect(dt) {
       if (inp.pressed.attack) { s.ready = true; sfx.join(); say(CLASSES_NAME(s.cls), `pick${i}`, 500); }
       if (inp.pressed.magic) {
         slots[i] = null; countdown = null;
+        unsplitKeyboard(slots);
         if (!slots.some(Boolean)) setState('title');
       }
     } else if (inp.pressed.magic) {
@@ -253,8 +286,9 @@ function updatePlay(dt) {
 
   // Drop-in join / continue
   const used = game.allPlayers().map((p) => p.source);
-  const joiner = input.firstPressed('attack', used);
-  if (joiner && game.allPlayers().length < MAX_PLAYERS) {
+  const roomy = game.allPlayers().length < MAX_PLAYERS;
+  const joiner = roomy && splitKeyboard(game.allPlayers()) ? 'kb2' : input.firstPressed('attack', used);
+  if (joiner && roomy) {
     const slot = [0, 1, 2, 3].find((i) => !game.players[i]);
     const cls = nextFreeClass(game.allPlayers().map((p) => p.cls));
     game.joinMidGame(slot, joiner, cls, save.heroes[cls]);

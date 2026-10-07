@@ -1,4 +1,10 @@
 // Keyboard, gamepad and touch input. Every device is an "input source" a player can claim.
+//
+// The keyboard and the touch screen belong to the person sitting at this device, so by
+// default they are one source, 'kb': WASD, the arrow keys and the touch controls all drive
+// the same hero. A second player on the same keyboard has to ask for it (see splitKeyboard
+// in main.js); then 'kb1' is WASD plus touch and 'kb2' is the arrow keys. Gamepads are
+// always their own sources.
 
 const KB_SCHEMES = {
   kb1: {
@@ -23,6 +29,7 @@ export class Input {
     this.globalPressed = new Set();
     this.prevRaw = {};
     this.state = {};
+    this.split = false; // two players sharing the keyboard
     window.addEventListener('keydown', (e) => {
       if (PREVENT.has(e.code)) e.preventDefault();
       if (!this.keys.has(e.code)) this.globalPressed.add(e.code);
@@ -33,8 +40,8 @@ export class Input {
   }
 
   static label(id) {
+    if (id === 'kb') return document.body.classList.contains('touching') ? 'Touch screen' : 'Keyboard';
     if (KB_SCHEMES[id]) return KB_SCHEMES[id].label;
-    if (id === 'touch') return 'Touch screen';
     return `Gamepad ${Number(id.slice(3)) + 1}`;
   }
 
@@ -61,11 +68,26 @@ export class Input {
       };
     }
 
-    if (this.touch && this.touch.active) raw.touch = this.touch.raw();
+    // fold the touch controls (and, unless split, the second keyboard half) into one source
+    const touch = this.touch && this.touch.active ? this.touch.raw() : null;
+    const merged = [raw.kb1, touch, this.split ? null : raw.kb2].filter(Boolean);
+    const kb = {};
+    for (const k of [...BUTTONS, 'start']) kb[k] = merged.some((r) => r[k]);
+    kb.ax = touch ? touch.ax : 0;
+    kb.ay = touch ? touch.ay : 0;
+    const keyDir = (r) => r && (r.up || r.down || r.left || r.right);
+    if (keyDir(raw.kb1) || (!this.split && keyDir(raw.kb2))) { kb.ax = 0; kb.ay = 0; } // arrow keys win over the stick
+    delete raw.kb1;
+    if (this.split) raw.kb1 = kb;
+    else { delete raw.kb2; raw.kb = kb; }
 
     const state = {};
+    // when the keyboard is split or rejoined, a key still held must not count as a fresh press
+    const pr = this.prevRaw;
+    const either = (a = {}, b = {}) => Object.fromEntries([...BUTTONS, 'start'].map((k) => [k, a[k] || b[k]]));
+    const prevOf = (id) => pr[id] || (id === 'kb' ? either(pr.kb1, pr.kb2) : id === 'kb1' || id === 'kb2' ? pr.kb : null) || {};
     for (const [id, r] of Object.entries(raw)) {
-      const prev = this.prevRaw[id] || {};
+      const prev = prevOf(id);
       const pressed = {};
       for (const k of BUTTONS) pressed[k] = r[k] && !prev[k];
       pressed.start = !!r.start && !prev.start;
