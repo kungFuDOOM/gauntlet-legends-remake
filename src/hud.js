@@ -307,7 +307,7 @@ export function drawLoading(ctx, progress, error) {
 }
 
 export function titleShowcase(time) {
-  return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 440, scale: 1.6, turn: Math.sin(time * 0.7 + i) * 0.35 }));
+  return CLASS_ORDER.map((cls, i) => ({ cls, sx: 210 + i * 180, sy: 446, scale: 1.8, turn: Math.sin(time * 0.7 + i) * 0.35 }));
 }
 
 export function drawTitle(ctx, time, hiscores, progress = null) {
@@ -365,7 +365,7 @@ export function selectShowcase(slots, time) {
   for (let s = 0; s < MAX_PLAYERS; s++) {
     const slot = slots[s];
     if (!slot) continue;
-    out.push({ cls: slot.cls, sx: SEL_X0 + s * (SEL_W + SEL_GAP) + SEL_W / 2, sy: SEL_Y + 262, scale: 1.75, turn: time * 0.9 + s, walk: false, cheer: slot.ready });
+    out.push({ cls: slot.cls, sx: SEL_X0 + s * (SEL_W + SEL_GAP) + SEL_W / 2, sy: SEL_Y + 262, scale: 2.15, turn: time * 0.9 + s, walk: false, cheer: slot.ready });
   }
   return out;
 }

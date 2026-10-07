@@ -254,7 +254,10 @@ export async function loadAssets(onProgress = () => {}) {
   // props first: hero styling borrows some of them (e.g. the archer's quiver)
   const load = async (name) => {
     const gltf = await loader.loadAsync(`assets/models/${CHAR_SOURCE[name] || name}.glb`);
-    if (name === 'anims') for (const c of gltf.animations) assets.clips[c.name] = c;
+    if (name === 'anims') {
+      // bone scale tracks are constant; dropping them lets us re-proportion the skeletons
+      for (const c of gltf.animations) { c.tracks = c.tracks.filter((t) => !t.name.endsWith('.scale')); assets.clips[c.name] = c; }
+    }
     else if (CHARACTERS.includes(name)) assets.chars[name] = prepareCharacter(gltf.scene, name);
     else assets.props[name] = prepareProp(gltf.scene);
     onProgress(++done / names.length);
@@ -315,6 +318,41 @@ export function cloneProp(name) {
   return assets.props[name].clone(true);
 }
 
+// ---------- body proportions ----------
+// The CC0 base models are chibi (the head is nearly half their height). The arcade heroes
+// are built like real people, so each skeleton is re-proportioned at spawn: a smaller head,
+// a longer torso and much longer limbs, with hands and feet scaled back so weapons and
+// boots stay their normal size. Every bone's local Y axis runs along the bone.
+const BUILDS = {
+  hero:    { head: 0.43, spine: 1.35, chest: [1.12, 1.14, 1.08], leg: 2.15, legW: 1.14, arm: 1.55, armW: 1.08 },
+  heavy:   { head: 0.45, spine: 1.3, chest: [1.24, 1.14, 1.16], leg: 2.0, legW: 1.28, arm: 1.5, armW: 1.22 },
+  slim:    { head: 0.43, spine: 1.38, chest: [1.02, 1.14, 1.0], leg: 2.2, legW: 1.03, arm: 1.55, armW: 0.98 },
+  monster: { head: 0.55, spine: 1.2, chest: [1.08, 1.1, 1.05], leg: 1.75, legW: 1.08, arm: 1.4, armW: 1.05 },
+};
+const BUILD_OF = {
+  warrior: 'heavy', minotaur: 'heavy', valkyrie: 'hero', jackal: 'hero', wizard: 'hero',
+  archer: 'slim', falconess: 'slim', tigress: 'slim',
+};
+const LEG_LEN = 0.376; // thigh + shin in the base rig, metres
+
+function applyBuild(model, build) {
+  const b = BUILDS[build];
+  if (!b) return 0;
+  const bone = (n) => model.getObjectByName(n);
+  const set = (n, x, y, z) => { const o = bone(n); if (o) o.scale.set(x, y, z); };
+  set('spine', 1, b.spine, 1);
+  set('chest', ...b.chest);
+  const [cx, cy, cz] = b.chest;
+  set('head', b.head / cx, b.head / cy, b.head / cz);
+  for (const side of ['l', 'r']) {
+    set(`upperleg${side}`, b.legW, b.leg, b.legW);
+    set(`foot${side}`, 1.05 / b.legW, 1.05 / b.leg, 1.05 / b.legW);
+    set(`upperarm${side}`, b.armW, b.arm, b.armW);
+    set(`hand${side}`, 1 / (b.armW * cx), 1 / b.arm, 1 / (b.armW * cz));
+  }
+  return LEG_LEN * (b.leg - 1); // how far the hips must rise to keep the feet on the ground
+}
+
 // ---------- animated actors ----------
 
 const LOWER = /^(root|hips|upperleg|lowerleg|foot|toes|kneeIK|control|heelIK|IK)/;
@@ -347,6 +385,14 @@ export class Actor {
     this.model.scale.setScalar(MODEL_SCALE);
     const hs = assets.chars[charName].userData.heroScale;
     if (hs) this.model.scale.set(MODEL_SCALE * hs[0], MODEL_SCALE * hs[1], MODEL_SCALE * hs[2]);
+    // taller, adult proportions; scale down a touch overall so heroes still fit the tiles
+    const monster = charName.startsWith('skeleton');
+    const lift = applyBuild(this.model, BUILD_OF[charName] || (monster ? 'monster' : null));
+    if (lift) {
+      // heroes stay a touch larger than the rank-and-file monsters so they read clearly
+      this.model.scale.multiplyScalar(monster ? 0.84 : 1.02);
+      this.model.position.y = lift * this.model.scale.y;
+    }
     this.root.add(this.model);
     this.mats = [];
     const matMap = new Map();
