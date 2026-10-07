@@ -87,7 +87,8 @@ export function drawGameOverlay(ctx, g, r3d, opts) {
   }
 
   drawBossBar(ctx, g);
-  if (!g.boss && opts.runes != null) drawRuneCount(ctx, opts.runes);
+  if (g.level.hub) drawHubLabels(ctx, g, r3d);
+  if (!g.boss && !g.level.hub && opts.runes != null) drawRuneCount(ctx, opts.runes);
   if (g.treasureT > 0) {
     ctx.textAlign = 'center';
     ctx.font = `bold 34px ${SANS}`;
@@ -537,74 +538,58 @@ const STAGE_NAMES = [
   ['Gates of the Underworld', 'Lava Pits', 'Hall of Souls', 'Skorne'],
 ];
 
-export function drawMap(ctx, time, progress, cursor, g) {
-  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
-  ctx.fillStyle = 'rgba(6,4,2,0.55)';
+// Stage picker shown when the party steps onto a realm portal in the hub.
+export function drawRealmPick(ctx, time, progress, pick) {
+  const r = pick.realm;
+  const cw = 300, ch = 372, x = (VIEW_W - cw) / 2, y0 = 120;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  frame(ctx, x, y0, cw, ch, REALM_COLORS[r]);
   ctx.textAlign = 'center';
-  ctx.font = `bold 38px ${SERIF}`;
-  const tg = ctx.createLinearGradient(0, 30, 0, 70);
-  tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
-  outlined(ctx, 'THE REALMS', VIEW_W / 2, 60, tg, '#1a0a00', 6);
-  const runes = Object.keys(progress.runes).length;
-  const guardians = [4, 8, 12].filter((n) => progress.completed[n]).length;
-  ctx.font = `bold 14px ${SANS}`;
-  outlined(ctx, `Rune Stones ${runes} / 16     Guardians defeated ${guardians} / 3`, VIEW_W / 2, 86, '#ffd0ff', '#000', 3);
-
-  const cw = 214, gap = 12, x0 = (VIEW_W - (cw * 4 + gap * 3)) / 2, y0 = 104, ch = 372;
-  for (let r = 0; r < 4; r++) {
-    const x = x0 + r * (cw + gap);
-    const lockedRealm = r === 3 && guardians < 3;
-    const sel = cursor.realm === r;
-    frame(ctx, x, y0, cw, ch, sel ? REALM_COLORS[r] : '#5a4a30');
-    if (sel) { ctx.strokeStyle = REALM_COLORS[r]; ctx.lineWidth = 3; roundRect(ctx, x - 3, y0 - 3, cw + 6, ch + 6, 10); ctx.stroke(); ctx.lineWidth = 1; }
-    ctx.font = `italic bold 19px ${SERIF}`;
-    outlined(ctx, REALM_NAMES[r], x + cw / 2, y0 + 32, lockedRealm ? '#7a7060' : REALM_COLORS[r], '#000', 4);
-    for (let s = 1; s <= 4; s++) {
-      const n = r * 4 + s;
-      const sy = y0 + 54 + (s - 1) * 76;
-      const open = !lockedRealm && (s === 1 || progress.completed[n - 1]);
-      const done = !!progress.completed[n];
-      const here = sel && cursor.stage === s;
-      ctx.fillStyle = here ? 'rgba(255,220,140,0.22)' : 'rgba(0,0,0,0.35)';
-      roundRect(ctx, x + 10, sy, cw - 20, 66, 6);
-      ctx.fill();
-      if (here) { ctx.strokeStyle = '#ffe080'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
-      ctx.textAlign = 'left';
-      ctx.font = `bold 10px ${SANS}`;
-      outlined(ctx, s === 4 ? 'GUARDIAN' : `STAGE ${s}`, x + 20, sy + 18, s === 4 ? '#ff9a7a' : '#c8b88a', '#000', 2);
-      const label = open ? STAGE_NAMES[r][s - 1] : '? ? ?';
-      let fs = 14;
-      ctx.font = `bold ${fs}px ${SANS}`;
-      while (fs > 10 && ctx.measureText(label).width > cw - 74) { fs--; ctx.font = `bold ${fs}px ${SANS}`; }
-      outlined(ctx, label, x + 20, sy + 38, open ? '#f4ead0' : '#6a6050', '#000', 3);
-      ctx.font = `11px ${SANS}`;
-      outlined(ctx, done ? 'Cleared' : open ? 'Open' : 'Locked', x + 20, sy + 56, done ? '#80e080' : open ? '#ffe080' : '#8a7060', '#000', 2);
-      // rune slot for this stage
-      const key = s === 4 ? `g${n}` : `h${n}`;
-      drawRuneIcon(ctx, x + cw - 34, sy + 33, 20, !!progress.runes[key]);
-      ctx.textAlign = 'center';
-    }
-    if (lockedRealm) {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      roundRect(ctx, x + 4, y0 + 44, cw - 8, ch - 50, 6);
-      ctx.fill();
-      ctx.font = `bold 15px ${SANS}`;
-      outlined(ctx, 'SEALED', x + cw / 2, y0 + ch / 2, '#ff8060', '#000', 4);
-      ctx.font = `12px ${SANS}`;
-      outlined(ctx, 'Defeat the three guardians', x + cw / 2, y0 + ch / 2 + 22, '#e0d0b0', '#000', 3);
-    }
+  ctx.font = `italic bold 24px ${SERIF}`;
+  outlined(ctx, REALM_NAMES[r], VIEW_W / 2, y0 + 36, REALM_COLORS[r], '#000', 4);
+  for (let s = 1; s <= 4; s++) {
+    const n = r * 4 + s;
+    const sy = y0 + 56 + (s - 1) * 76;
+    const open = s === 1 || progress.completed[n - 1];
+    const done = !!progress.completed[n];
+    const here = pick.stage === s;
+    ctx.fillStyle = here ? 'rgba(255,220,140,0.22)' : 'rgba(0,0,0,0.35)';
+    roundRect(ctx, x + 12, sy, cw - 24, 66, 6);
+    ctx.fill();
+    if (here) { ctx.strokeStyle = '#ffe080'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
+    ctx.textAlign = 'left';
+    ctx.font = `bold 10px ${SANS}`;
+    outlined(ctx, s === 4 ? 'GUARDIAN' : `STAGE ${s}`, x + 24, sy + 18, s === 4 ? '#ff9a7a' : '#c8b88a', '#000', 2);
+    ctx.font = `bold 15px ${SANS}`;
+    outlined(ctx, open ? STAGE_NAMES[r][s - 1] : '? ? ?', x + 24, sy + 39, open ? '#f4ead0' : '#6a6050', '#000', 3);
+    ctx.font = `11px ${SANS}`;
+    outlined(ctx, done ? 'Cleared' : open ? 'Open' : 'Locked', x + 24, sy + 57, done ? '#80e080' : open ? '#ffe080' : '#8a7060', '#000', 2);
+    drawRuneIcon(ctx, x + cw - 40, sy + 33, 20, !!progress.runes[s === 4 ? `g${n}` : `h${n}`]);
   }
   ctx.textAlign = 'center';
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, 'Arrows / stick: choose     Attack: enter     Magic: save & quit to title     Others press Attack to join', VIEW_W / 2, 500, '#e0d4b8', '#000', 3);
-  if (g) {
-    ctx.font = `bold 12px ${SANS}`;
-    const ps = g.allPlayers();
-    ps.forEach((p, i) => {
-      const sx = VIEW_W / 2 + (i - (ps.length - 1) / 2) * 120;
-      outlined(ctx, `${p.name.toUpperCase()} LV${p.lvl}`, sx, 528, p.def.color, '#000', 3);
-    });
+  outlined(ctx, 'Up/Down: choose     Attack: enter     Magic: back', VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
+}
+
+// Labels over the hub's portals and merchant, and a prompt when someone stands at one.
+function drawHubLabels(ctx, g, r3d) {
+  ctx.textAlign = 'center';
+  for (const pt of g.level.portals) {
+    const p = r3d.toScreen((pt.x + 0.5) * TILE, (pt.y + 0.5) * TILE + 30, 0);
+    p.y += 14;
+    ctx.font = `italic bold 15px ${SERIF}`;
+    const sealed = pt.realm === 3 && g.underworldSealed;
+    outlined(ctx, REALM_NAMES[pt.realm], p.x, p.y, sealed ? '#8a7a6a' : REALM_COLORS[pt.realm], '#000', 4);
+    if (sealed) { ctx.font = `bold 10px ${SANS}`; outlined(ctx, 'SEALED', p.x, p.y + 14, '#ff8060', '#000', 3); }
+  }
+  const sp = r3d.toScreen((g.level.shop.x + 0.5) * TILE, (g.level.shop.y + 0.5) * TILE, 80);
+  ctx.font = `italic bold 15px ${SERIF}`;
+  outlined(ctx, 'Merchant', sp.x, sp.y, '#ffd860', '#000', 4);
+  if (g.hubFocus) {
+    const text = g.hubFocus.type === 'shop' ? 'Press Attack to trade' : (g.hubFocus.realm === 3 && g.underworldSealed ? 'The way is sealed' : 'Press Attack to enter');
+    ctx.font = `bold 18px ${SANS}`;
+    outlined(ctx, text, VIEW_W / 2, VIEW_H - 120, Math.floor(g.time * 3) % 2 ? '#ffffff' : '#ffe080', '#000', 4);
   }
 }
 

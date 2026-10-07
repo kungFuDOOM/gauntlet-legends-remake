@@ -653,7 +653,7 @@ function populate(n, R, info, map) {
   const randomAreaCell = () => (others.length ? freeCellIn(areas[others[Math.floor(R() * others.length)]].cells) : null);
 
   addItem('food', freeCellIn(areas[startArea].cells));
-  for (let k = 0; k < 2 + Math.floor(areas.length / 3); k++) addItem('food', randomAreaCell());
+  for (let k = 0; k < 2 + Math.floor(areas.length / 3); k++) addItem(n >= 3 && R() < 0.22 ? 'poison' : 'food', randomAreaCell());
   for (let k = 0; k < 6 + n; k++) addItem(R() < 0.15 ? 'gem' : 'gold', randomAreaCell());
   for (let k = 0; k < 2 + Math.floor(n / 2); k++) addItem('chest', randomAreaCell());
   for (let k = 0; k < 8 + n; k++) addItem('barrel', randomAreaCell());
@@ -695,6 +695,30 @@ function populate(n, R, info, map) {
 
   const rooms = areas.map((a) => ({ cx: a.cx, cy: a.cy, size: a.cells.length, vault: !!a.vault }));
   return { n, w, h, tiles, ground, rooms, start, exit, items, generators, enemies, boss: null, info, doorSegs: doorSegs.length, secret: !!secret };
+}
+
+// ---------- the hub (Dark Legacy style): a plaza with a portal to each realm ----------
+
+export const HUB_PORTALS = [
+  { realm: 0, x: 6, y: 6 }, { realm: 1, x: 21, y: 6 }, { realm: 2, x: 6, y: 16 }, { realm: 3, x: 21, y: 16 },
+];
+
+export function generateHub() {
+  const base = levelInfo(LEVELS_PER_REALM + 1); // castle look
+  const info = { ...base, style: 'castle', isBoss: false, hub: true, stageName: 'The Hub', stage: 0, theme: { ...base.theme, name: 'Choose your realm' } };
+  const w = 28, h = 23;
+  const tiles = grid(w, h, T.WALL);
+  const ground = grid(w, h, 0);
+  for (let y = 3; y <= h - 4; y++) for (let x = 3; x <= w - 4; x++) tiles[y * w + x] = T.FLOOR;
+  // grassy centre with pillars at its corners
+  for (let y = 9; y <= 13; y++) for (let x = 10; x <= 17; x++) ground[y * w + x] = GROUND.GRASS;
+  for (const [px, py] of [[10, 9], [17, 9], [10, 13], [17, 13]]) tiles[py * w + px] = T.WALL;
+  const shop = { x: 13, y: 4 };
+  const items = [{ type: 'food', x: 12, y: 11 }, { type: 'food', x: 15, y: 11 }];
+  return {
+    n: 0, w, h, tiles, ground, rooms: [{ cx: 13, cy: 11, size: 300 }], start: { x: 13, y: 15 }, exit: null,
+    items, generators: [], enemies: [], boss: null, info, doorSegs: 0, hub: true, portals: HUB_PORTALS, shop,
+  };
 }
 
 // ---------- treasure room (bonus round after each guardian) ----------

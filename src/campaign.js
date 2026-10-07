@@ -83,7 +83,7 @@ export const SHOP = [
   { id: 'armor', name: 'Armor', desc: 'Take less damage', price: 500, stat: true },
   { id: 'speed', name: 'Speed', desc: 'Run faster', price: 400, stat: true },
   { id: 'magic', name: 'Magic', desc: 'Stronger potions', price: 400, stat: true },
-  { id: 'done', name: 'Done', desc: 'Return to the map', price: 0 },
+  { id: 'done', name: 'Done', desc: 'Back to the hub', price: 0 },
 ];
 
 // Stat upgrades get pricier each time you buy the same one.

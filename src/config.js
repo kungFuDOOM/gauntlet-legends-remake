@@ -120,6 +120,10 @@ export const POWERUPS = {
   invisible: { name: 'Invisibility',    color: '#b0b8c8', dur: 15 },  // monsters lose track of you
   levitate:  { name: 'Levitation',      color: '#a0ffb0', dur: 20 },  // float over lava and the void
   xray:      { name: 'X-Ray Glasses',   color: '#40ff80', dur: 30 },  // reveals secret walls
+  phoenix:   { name: 'Phoenix',         color: '#ff7020', dur: 25 },  // a fiery familiar fights beside you
+  lightning: { name: 'Lightning Breath', color: '#a0e0ff', dur: 15 }, // attacks arc to nearby foes
+  grow:      { name: 'Grow Potion',     color: '#80ff40', dur: 20 },  // giant-sized: hit harder, take less
+  antideath: { name: 'Anti-Death Halo', color: '#fff080', dur: 30 },  // Death is destroyed by your touch
 };
 export const POWERUP_ORDER = Object.keys(POWERUPS);
 

@@ -8,7 +8,7 @@ import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawMap, drawShop, drawEnding, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
@@ -75,7 +75,6 @@ function persist() {
   if (game) for (const p of game.allPlayers()) save.heroes[p.cls] = game.heroSave(p);
   writeSave(save);
 }
-let mapCursor = { realm: 0, stage: 1 };
 let story = null;     // { lines, idx, t, next }
 let shop = [];        // per player slot: { idx, done }
 
@@ -168,34 +167,47 @@ function startGame() {
   openMap();
 }
 
-// ---------- realm map ----------
+// ---------- the hub ----------
 
-function openMap() {
-  mapCursor = nextStage(save.progress);
-  setState('map');
+let realmPick = null; // { realm, stage } while choosing a stage at a portal
+
+function openHub(fromRealm = null) {
+  for (const p of game.allPlayers()) { p.alive = true; p.hp = Math.max(p.hp, p.def.hp); }
+  game.underworldSealed = !isUnlocked(save.progress, 3, 1);
+  game.startHub(fromRealm);
+  setState('play');
 }
+const openMap = () => openHub();
 
 function partySources() { return game ? game.allPlayers().map((p) => p.source) : []; }
 function partyPressed(btn) { return partySources().some((src) => input.get(src).pressed[btn]); }
 
-function updateMap() {
-  // anyone can drop in at the map too
-  const joiner = input.firstPressed('attack', partySources());
-  if (joiner && game.allPlayers().length < MAX_PLAYERS) {
-    const slot = [0, 1, 2, 3].find((i) => !game.players[i]);
-    const cls = nextFreeClass(game.allPlayers().map((p) => p.cls));
-    game.addPlayer(slot, joiner, cls, save.heroes[cls]);
-    sfx.join();
+// In the hub, Attack at a portal picks a stage; at the merchant it opens the shop.
+function updateHubActions() {
+  const f = game.hubFocus;
+  if (!f || !partyPressed('attack')) return;
+  if (f.type === 'shop') {
+    shop = game.players.map((p) => (p ? { idx: 0, done: false } : null));
+    setState('shop');
     return;
   }
-  const dx = (partyPressed('right') ? 1 : 0) - (partyPressed('left') ? 1 : 0);
-  const dy = (partyPressed('down') ? 1 : 0) - (partyPressed('up') ? 1 : 0);
-  if (dx) { mapCursor.realm = (mapCursor.realm + dx + 4) % 4; mapCursor.stage = Math.min(mapCursor.stage, 4); sfx.select(); }
-  if (dy) { mapCursor.stage = Math.max(1, Math.min(4, mapCursor.stage + dy)); sfx.select(); }
-  if (partyPressed('magic')) { persist(); game = null; setState('title'); return; }
+  if (f.realm === 3 && game.underworldSealed) { sfx.hurt(); toast = { text: 'Sealed! Defeat the three guardians first', t: 2 }; return; }
+  const next = nextStage(save.progress);
+  let stage = 1;
+  for (let s = 1; s <= 4; s++) if (isUnlocked(save.progress, f.realm, s) && !save.progress.completed[levelNumber(f.realm, s)]) { stage = s; break; }
+  if (next.realm === f.realm) stage = next.stage;
+  realmPick = { realm: f.realm, stage };
+  sfx.select();
+  setState('realm');
+}
+
+function updateRealmPick() {
+  if (partyPressed('up')) { realmPick.stage = Math.max(1, realmPick.stage - 1); sfx.select(); }
+  if (partyPressed('down')) { realmPick.stage = Math.min(4, realmPick.stage + 1); sfx.select(); }
+  if (partyPressed('magic')) { setState('play'); return; }
   if (partyPressed('attack')) {
-    const { realm, stage } = mapCursor;
-    if (!isUnlocked(save.progress, realm, stage)) { sfx.hurt(); toast = { text: realm === 3 ? 'Defeat the three guardians first' : 'Clear the previous stage first', t: 1.8 }; return; }
+    const { realm, stage } = realmPick;
+    if (!isUnlocked(save.progress, realm, stage)) { sfx.hurt(); toast = { text: 'Clear the previous stage first', t: 1.8 }; return; }
     const go = () => {
       for (const p of game.allPlayers()) { p.alive = true; p.hp = Math.max(p.hp, p.def.hp); }
       game.startLevel(levelNumber(realm, stage));
@@ -227,13 +239,13 @@ function updatePlay(dt) {
   }
 
   game.update(dt, input);
+  if (game.level.hub) { updateHubActions(); return; }
 
   if (game.exitReached && game.level.treasure) {
-    // treasure room over: straight to the merchant with the loot
+    // treasure room over: back to the hub with the loot
     persist();
     toast = { text: 'Treasure room complete!', t: 2 };
-    shop = game.players.map((p) => (p ? { idx: 0, done: false } : null));
-    setState('shop');
+    openHub(realmOf(clearInfo.level));
     return;
   }
   if (game.exitReached) {
@@ -274,8 +286,7 @@ function updateLevelClear() {
       setState('play');
       return;
     }
-    shop = game.players.map((p) => (p ? { idx: 0, done: false } : null));
-    setState('shop');
+    openHub(realmOf(clearInfo.level));
   }
 }
 
@@ -297,7 +308,7 @@ function updateShop() {
     } else if (inp.pressed.magic) c.done = false;
     allDone = allDone && c.done;
   }
-  if (allDone && stateT > 0.5) { persist(); openMap(); }
+  if (allDone && stateT > 0.5) { persist(); setState('play'); }
 }
 
 function updateGameOver() {
@@ -311,7 +322,7 @@ function updateGameOver() {
     setState('play');
   } else if (input.firstPressed('magic')) {
     for (const p of game.allPlayers()) { p.alive = true; p.hp = p.def.hp; p.keys = 0; }
-    openMap();
+    openHub(game.levelNum ? realmOf(game.levelNum) : null);
   }
 }
 
@@ -322,6 +333,7 @@ function updateEnding() {
 // Background music for whatever is on screen.
 function currentTrack() {
   if (state === 'shop') return 'shop';
+  if (game && game.level && game.level.hub) return 'castle';
   if (state === 'ending') return 'victory';
   if ((state === 'play' || state === 'paused' || state === 'levelclear' || state === 'gameover') && game && game.level) {
     if (game.level.treasure) return 'treasure';
@@ -345,20 +357,21 @@ function render() {
   } else if (state === 'select') {
     r3d.renderShowcase(selectShowcase(slots, stateT), stateT);
     drawSelect(ctx, stateT, slots, countdown, save.heroes);
-  } else if (state === 'map') {
-    r3d.renderShowcase(partyShowcase(game, stateT), stateT);
-    drawMap(ctx, stateT, save.progress, mapCursor, game);
   } else if (state === 'shop') {
-    r3d.renderShowcase(partyShowcase(game, stateT, true), stateT);
+    r3d.render(game);
     drawShop(ctx, stateT, game, shop);
+  } else if (state === 'realm') {
+    r3d.render(game);
+    drawGameOverlay(ctx, game, r3d, { runes: runeCount(save.progress) });
+    drawRealmPick(ctx, stateT, save.progress, realmPick);
   } else if (state === 'ending') {
     r3d.renderShowcase(partyShowcase(game, stateT, true, true), stateT);
     drawEnding(ctx, stateT, game, save.progress);
   } else if (game) {
     r3d.render(game);
-    drawGameOverlay(ctx, game, r3d, { minimap: showMinimap, runes: runeCount(save.progress) + game.runesFound.length });
+    drawGameOverlay(ctx, game, r3d, { minimap: showMinimap && !game.level.hub, runes: runeCount(save.progress) + game.runesFound.length });
     if (state === 'paused') {
-      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute   N: music   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
+      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'Magic: save and quit to title', 'M: mute   N: music   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
       const lines = clearInfo.wasBoss
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, '']
@@ -366,7 +379,7 @@ function render() {
       for (const p of game.allPlayers()) lines.push(`${p.name}: level ${p.lvl} · ${p.gold} gold`);
       lines.push('', `Rune Stones: ${runeCount(save.progress)} / ${TOTAL_RUNES}`);
       for (const c of clearInfo.unlocked || []) lines.push(`SECRET HERO UNLOCKED: ${c.toUpperCase()}!`);
-      if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? 'Press Attack to enter the Treasure Room!' : 'Press Attack to visit the shop');
+      if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? 'Press Attack to enter the Treasure Room!' : 'Press Attack to return to the hub');
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
       const lines = game.allPlayers().map((p) => `${p.name}: level ${p.lvl} · ${p.score} pts`);
@@ -408,12 +421,13 @@ function frame(now) {
     case 'confirm': updateConfirm(); break;
     case 'story': updateStory(dt); break;
     case 'select': updateSelect(dt); break;
-    case 'map': updateMap(); break;
+    case 'realm': updateRealmPick(); break;
     case 'shop': updateShop(); break;
     case 'ending': updateEnding(); break;
     case 'play': updatePlay(dt); break;
     case 'paused':
       if (input.key('Escape') || input.key('KeyP') || input.anyStart()) setState('play');
+      else if (partyPressed('magic')) { persist(); game = null; setState('title'); }
       break;
     case 'levelclear': updateLevelClear(); break;
     case 'gameover': updateGameOver(); break;

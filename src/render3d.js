@@ -450,18 +450,60 @@ export class Renderer3D {
         group.add(p);
       }
 
-    // ---- exit portal flanked by candles ----
+    // ---- exit portal flanked by candles (the hub has a portal per realm instead) ----
+    this.exit = null;
+    this.hubPortals = [];
+    const portalAt = (x, y, sealed) => {
+      const e = buildExit(sealed);
+      e.position.set(x * TILE + 16, 0.5, y * TILE + 16);
+      group.add(e);
+      for (const ox of [-22, 22]) {
+        const c = cloneProp('candles');
+        c.scale.setScalar(S * 0.6);
+        c.position.set(x * TILE + 16 + ox, 0, y * TILE);
+        group.add(c);
+      }
+      return e;
+    };
     const ex = g.level.exit;
-    this.exitSealed = tileAt(ex.x, ex.y) === T.SEALED;
-    this.exit = buildExit(this.exitSealed);
-    this.exit.position.set(ex.x * TILE + 16, 0.5, ex.y * TILE + 16);
-    group.add(this.exit);
-    for (const ox of [-22, 22]) {
-      const c = cloneProp('candles');
-      c.scale.setScalar(S * 0.6);
-      c.position.set(ex.x * TILE + 16 + ox, 0, ex.y * TILE);
-      group.add(c);
+    if (ex) {
+      this.exitSealed = tileAt(ex.x, ex.y) === T.SEALED;
+      this.exit = portalAt(ex.x, ex.y, this.exitSealed);
     }
+    if (g.level.hub) {
+      const colors = ['#ffb24a', '#a8c0ff', '#e0f4ff', '#ff6a3a'];
+      for (const pt of g.level.portals) {
+        const sealed = pt.realm === 3 && g.underworldSealed;
+        const e = portalAt(pt.x, pt.y, sealed);
+        e.userData.halo.material.color.set(colors[pt.realm]);
+        const pillar = cloneProp('pillar_decorated');
+        for (const ox of [-1.5, 1.5]) {
+          const pc = pillar.clone(true);
+          pc.scale.setScalar(S * 0.3);
+          pc.position.set((pt.x + 0.5 + ox) * TILE, 0, (pt.y + 0.5) * TILE - 10);
+          group.add(pc);
+        }
+        this.hubPortals.push(e);
+        this.torches.push({ x: (pt.x + 0.5) * TILE, z: (pt.y + 0.5) * TILE, y: 30, color: colors[pt.realm], power: 120 });
+      }
+      // the merchant's stall
+      const sx = (g.level.shop.x + 0.5) * TILE, sz = (g.level.shop.y + 0.5) * TILE;
+      for (const [k, ox, oz, sc] of [['keg', -40, 0, 0.5], ['crates', 42, -4, 0.5], ['barrel_stack', 70, -6, 0.5], ['banner_red', -70, -20, 0.5]]) {
+        const p = cloneProp(k);
+        p.scale.setScalar(S * sc);
+        p.position.set(sx + ox, 0, sz + oz);
+        group.add(p);
+      }
+      const coins = cloneProp('coins_big');
+      coins.scale.setScalar(S * 0.6);
+      coins.position.set(sx - 40, 30, sz);
+      group.add(coins);
+      this.merchant = new Actor('merchant');
+      this.merchant.base('Idle');
+      this.merchant.root.position.set(sx, 0, sz);
+      this.blob(this.merchant.root, 34);
+      group.add(this.merchant.root);
+    } else this.merchant = null;
   }
 
   // A lone wall tile with open floor on all four sides (courtyard pillars, island ruins).
@@ -569,6 +611,13 @@ export class Renderer3D {
     const add = (name, s, y = 0) => { const p = cloneProp(name); p.scale.setScalar(S * s); p.position.y = y; spin.add(p); return p; };
     switch (it.type) {
       case 'food': add(hash(it.x, it.y) < 0.5 ? 'food' : 'food_b', 0.7); break;
+      case 'poison': {
+        // looks like a meal, but sickly green and fuming
+        const f = add('food_b', 0.7);
+        f.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiply(new THREE.Color('#90ff60')); } });
+        glow = '#50ff30';
+        break;
+      }
       case 'gold': add('coins', 0.65); glow = '#ffd040'; break;
       case 'key': { const k = add('key', 0.9, 10); k.rotation.z = Math.PI / 2; k.position.x = -3; glow = '#ffd040'; spins = true; break; }
       case 'potion': {
@@ -722,6 +771,15 @@ export class Renderer3D {
     a.flash(p.hurtFlash, '#ff2020');
     a.fade(p.buffs.invisible ? 0.3 : 1);
     v.root.position.y = p.buffs.levitate ? 6 + Math.sin(g.time * 4) * 2 : 0;
+    const big = p.buffs.grow ? 1.4 : 1;
+    v.root.scale.setScalar(v.root.scale.x + (big - v.root.scale.x) * 0.15);
+    if (p.buffs.phoenix && p.famX !== undefined) {
+      if (!v.familiar) { v.familiar = makePhoenix(); this.levelGroup.add(v.familiar); }
+      v.familiar.visible = true;
+      v.familiar.position.set(p.famX, 34 + Math.sin(g.time * 6) * 3, p.famY);
+      v.familiar.rotation.y = g.time * 3 + Math.PI / 2;
+      v.familiar.userData.wings.forEach((w, i) => (w.rotation.z = (i ? -1 : 1) * (0.4 + Math.sin(g.time * 18) * 0.5)));
+    } else if (v.familiar) v.familiar.visible = false;
     a.update(dt);
     v.ring.material.opacity = 0.55 + Math.sin(g.time * 5) * 0.25;
 
@@ -841,14 +899,23 @@ export class Renderer3D {
       }
     }
     const ex = g.level.exit;
-    const sealed = g.tile(ex.x, ex.y) === T.SEALED;
-    if (this.exitSealed && !sealed) {
-      this.exitSealed = false;
-      this.exit.userData.bars.visible = false;
-      this.exit.userData.disk.material.opacity = 1;
-      this.exit.userData.halo.material.opacity = 0.6;
+    if (ex) {
+      const sealed = g.tile(ex.x, ex.y) === T.SEALED;
+      if (this.exitSealed && !sealed) {
+        this.exitSealed = false;
+        this.exit.userData.bars.visible = false;
+        this.exit.userData.disk.material.opacity = 1;
+        this.exit.userData.halo.material.opacity = 0.6;
+      }
+      this.exit.userData.disk.rotation.z = -t * 2.5;
     }
-    this.exit.userData.disk.rotation.z = -t * 2.5;
+    for (const e of this.hubPortals) e.userData.disk.rotation.z = -t * 2.5;
+    if (this.merchant) {
+      this.merchant.update(Math.min(0.05, Math.max(0, t - (this.merchantT ?? t))));
+      this.merchantT = t;
+      const ps = g.livePlayers();
+      if (ps.length) { const p = ps[0]; this.merchant.root.rotation.y = Math.atan2(p.x - this.merchant.root.position.x, p.y - this.merchant.root.position.z); }
+    }
     for (const tc of this.torches) if (tc.halo) tc.halo.scale.setScalar(44 * (1 + Math.sin(t * 17 + tc.x) * 0.1 + Math.sin(t * 29 + tc.z) * 0.06));
     for (const [idx, m] of this.cracked) if (g.tiles[idx] !== T.CRACKED) { this.levelGroup.remove(m); this.cracked.delete(idx); }
     // X-ray glasses make secret walls glow
@@ -879,8 +946,8 @@ export class Renderer3D {
       l.intensity = 60;
     });
     const ex = g.level.exit;
-    this.exitLight.position.set(ex.x * TILE + 16, 30, ex.y * TILE + 16);
-    this.exitLight.intensity = this.exitSealed ? 0 : 90 + Math.sin(t * 4) * 20;
+    if (ex) this.exitLight.position.set(ex.x * TILE + 16, 30, ex.y * TILE + 16);
+    this.exitLight.intensity = !ex || this.exitSealed ? 0 : 90 + Math.sin(t * 4) * 20;
   }
 
   syncParticles(g) {
@@ -984,6 +1051,25 @@ export class Renderer3D {
     }
     this.showcase = { scene, camera, heroes: new Map(), lights, halos };
   }
+}
+
+function makePhoenix() {
+  const g = new THREE.Group();
+  const fire = new THREE.MeshStandardMaterial({ color: '#ffa030', emissive: '#ff5010', emissiveIntensity: 1.6 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(4, 10, 8), fire);
+  body.scale.set(1, 0.8, 1.6);
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(2.6, 8, 6), fire);
+  head.position.set(0, 2, 6);
+  g.add(head);
+  const wings = [];
+  const wingGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, -3), new THREE.Vector3(14, 2, -2), new THREE.Vector3(10, 0, 4)]);
+  wingGeo.computeVertexNormals();
+  const wingMat = new THREE.MeshStandardMaterial({ color: '#ffd040', emissive: '#ff7010', emissiveIntensity: 1.4, side: THREE.DoubleSide });
+  for (const s of [1, -1]) { const w = new THREE.Mesh(wingGeo, wingMat); w.scale.x = s; g.add(w); wings.push(w); }
+  g.add(glowSprite('#ff7020', 40, 0.8));
+  g.userData.wings = wings;
+  return g;
 }
 
 function addHorns(actor, color, r, len, spread) {

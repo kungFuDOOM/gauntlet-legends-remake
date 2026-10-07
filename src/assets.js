@@ -12,7 +12,7 @@ export const MODEL_SCALE = 16; // KayKit metres -> game units (one tile = 32 uni
 
 // Monster models; heroes are built in heroes.js on the rig taken from 'warrior.glb'.
 const CHARACTERS = ['skeleton_warrior', 'skeleton_minion', 'skeleton_rogue', 'skeleton_mage'];
-export const HERO_CLASSES = ['warrior', 'valkyrie', 'wizard', 'archer', 'dwarf', 'knight', 'jester', 'sorceress', 'minotaur', 'falconess', 'jackal', 'tigress'];
+export const HERO_CLASSES = ['warrior', 'valkyrie', 'wizard', 'archer', 'dwarf', 'knight', 'jester', 'sorceress', 'minotaur', 'falconess', 'jackal', 'tigress', 'merchant'];
 const HERO_SCALE = 27; // adult heroes are ~1.75 m tall -> ~47 game units
 const PROPS = [
   'weapon_axe', 'weapon_blade', 'weapon_staff', 'weapon_crossbow',

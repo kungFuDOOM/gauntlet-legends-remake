@@ -553,6 +553,17 @@ const HEROES = {
     for (const s of ['l', 'r']) bracer(b.bone(`lowerarm${s}`), R.fore, B.fore * 1.3, gold, 0.5);
     staff(b.bone('handslotr'), gold, 1.25, '#e060ff');
   },
+  // the hub's merchant (not playable)
+  merchant(rig) {
+    const R = RIGS.male, B = BODIES.stocky;
+    const robe = mat('#6a3a1a', { roughness: 0.85 });
+    const b = body(rig, B, { rig: R, skin: '#e8b090', chest: robe, abs: robe, upperArm: mat('#8a5a2a'), face: { beard: '#d8d8d8', brows: '#c8c8c8', eyes: '#3a2a1a' } });
+    add(b.head, cap(), mat('#a01818'), [0, 0.16, 0], [CAP_TILT, 0, 0], [0.105, 0.12, 0.115]);
+    add(b.head, cone(10), mat('#a01818'), [0, 0.28, -0.04], [-0.4, 0, 0], [0.07, 0.14, 0.07]);
+    add(b.spine, lathe([[B.hip * 1.06, -R.spine + 0.02], [B.hip * 1.3, -R.spine - 0.82]], 16), robe, [0, 0, 0], [0, Math.PI, 0], [1, 1, 0.85]);
+    belt(b.spine, R, B, mat('#3a2614'), metal('#d8b040'));
+    add(b.spine, sphere(), mat('#8a6a3a'), [0.14, -R.spine - 0.05, 0.08], [0, 0, 0], [0.05, 0.06, 0.05]); // coin purse
+  },
   // ---- secret heroes ----
   minotaur(rig) {
     const R = RIGS.big, B = BODIES.huge;
@@ -634,7 +645,7 @@ const HEROES = {
 
 export const HERO_RIG = {
   warrior: 'big', valkyrie: 'female', wizard: 'male', archer: 'female', dwarf: 'dwarf', knight: 'big', jester: 'male', sorceress: 'female',
-  minotaur: 'big', falconess: 'female', jackal: 'male', tigress: 'female',
+  minotaur: 'big', falconess: 'female', jackal: 'male', tigress: 'female', merchant: 'male',
 };
 
 export const isBuiltHero = (cls) => !!HEROES[cls];

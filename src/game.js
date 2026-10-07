@@ -4,7 +4,7 @@ import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
   POWERUPS, POWERUP_ORDER, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
-import { T, generateLevel, generateTreasureRoom, bfs, walkable } from './level.js';
+import { T, generateLevel, generateTreasureRoom, generateHub, bfs, walkable } from './level.js';
 import { sfx, say } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -66,6 +66,30 @@ export class Game {
   startLevel(n) {
     this.levelNum = n;
     this.loadLevel(generateLevel(n));
+  }
+
+  // The hub: realm portals and the merchant. `fromRealm` puts the party by that portal.
+  startHub(fromRealm = null) {
+    this.levelNum = 0;
+    this.loadLevel(generateHub());
+    this.hubFocus = null;
+    if (fromRealm != null) {
+      const pt = this.level.portals[fromRealm];
+      this.allPlayers().forEach((p, i) => {
+        const s = this.findOpenSpotNear((pt.x + 0.5) * TILE + (pt.x < 13 ? 50 : -50), (pt.y + 0.5) * TILE + (i - 1.5) * 20);
+        p.x = s.x; p.y = s.y;
+      });
+      this.camX = this.camTargetX(); this.camY = this.camTargetY();
+    }
+  }
+
+  updateHubFocus() {
+    this.hubFocus = null;
+    const L = this.level;
+    for (const p of this.livePlayers()) {
+      for (const pt of L.portals) if (Math.hypot(p.x - (pt.x + 0.5) * TILE, p.y - (pt.y + 0.5) * TILE) < 30) this.hubFocus = { type: 'portal', realm: pt.realm };
+      if (Math.hypot(p.x - (L.shop.x + 0.5) * TILE, p.y - (L.shop.y + 1.5) * TILE) < 40) this.hubFocus = { type: 'shop' };
+    }
   }
 
   // Timed bonus round full of gold, no monsters, no health drain.
@@ -300,6 +324,7 @@ export class Game {
 
   update(dt, input) {
     this.time += dt;
+    if (this.level.hub) this.updateHubFocus();
     if (this.treasureT > 0) {
       this.treasureT -= dt;
       if (this.treasureT <= 0 || !this.items.some((i) => i.type === 'gold' || i.type === 'gem' || i.type === 'chest')) { this.treasureT = 0.0001; this.exitReached = true; }
@@ -358,7 +383,7 @@ export class Game {
     for (const k of Object.keys(p.buffs)) { p.buffs[k] -= dt; if (p.buffs[k] <= 0) delete p.buffs[k]; }
 
     // Health drains over time (not in the treasure room).
-    if (!this.treasureT) p.drain += HEALTH_DRAIN * dt;
+    if (!this.treasureT && !this.level.hub) p.drain += HEALTH_DRAIN * dt;
     if (p.drain >= 1) { const d = Math.floor(p.drain); p.drain -= d; p.hp -= d; }
     this.healthWarnings(p);
     if (p.hp <= 0) { this.killPlayer(p); return; }
@@ -384,6 +409,8 @@ export class Game {
       const blocked = this.move(p, ok.x ? dx : 0, ok.y ? dy : 0);
       if (blocked && p.keys > 0) this.tryOpenDoor(p, mx, my);
     }
+
+    if (p.buffs.phoenix) this.updateFamiliar(p, dt);
 
     // Levitation: remember solid ground; if it wears off over the void, land back on it
     const under = this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE));
@@ -477,7 +504,7 @@ export class Game {
   hurtPlayer(p, amount, source) {
     if (source && source.dmgMul) amount *= source.dmgMul;
     if (!p.alive || p.invuln > 0 || p.buffs.shield || p.dash) return;
-    const dmg = Math.max(1, Math.round(amount * (1 - p.armor)));
+    const dmg = Math.max(1, Math.round(amount * (1 - Math.min(0.75, p.armor + (p.buffs.grow ? 0.15 : 0)))));
     p.hp -= dmg;
     p.hurtFlash = 0.15;
     sfx.hurt();
@@ -489,6 +516,7 @@ export class Game {
     const cd = p.def.shotCooldown * (p.buffs.rapid ? 0.5 : 1);
     p.shotCd = cd;
     if (p.buffs.fire) { this.breathFire(p); sfx.shoot('fireball'); }
+    if (p.buffs.lightning) this.lightningArc(p);
     // Melee if something is right in front of us.
     const reach = p.r + 26;
     const targets = [];
@@ -515,7 +543,8 @@ export class Game {
       p.act = { type: 'melee', t: this.time };
       p.shotCd = cd * 1.1;
       sfx.melee();
-      targets.slice(0, 3).forEach((t) => (t.kind === 'enemy' ? this.damageEnemy(t, p.strength, p, true) : this.damageGen(t, p.strength * 0.6, p)));
+      const str = p.strength * (p.buffs.grow ? 1.5 : 1);
+      targets.slice(0, 3).forEach((t) => (t.kind === 'enemy' ? this.damageEnemy(t, str, p, true) : this.damageGen(t, str * 0.6, p)));
       return;
     }
     const angles = p.buffs.triple ? [-0.22, 0, 0.22] : [0];
@@ -530,9 +559,39 @@ export class Game {
     this.projs.push({
       owner: 'player', p, kind, x: p.x + Math.cos(angle) * 10, y: p.y + Math.sin(angle) * 10,
       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (kind === 'fireball' ? 7 : 5) * (sup ? 2 : 1),
-      dmg: dmg * (sup ? 1.7 : 1), pierce: pierce + (sup ? 3 : 0), life, hits: new Set(), spin: 0,
+      dmg: dmg * (sup ? 1.7 : 1) * (p.buffs.grow ? 1.4 : 1), pierce: pierce + (sup ? 3 : 0), life, hits: new Set(), spin: 0,
       super: sup, bounces: p.buffs.reflect ? 3 : 0,
     });
+  }
+
+  // Lightning Breath: each attack also arcs to the three nearest monsters.
+  lightningArc(p) {
+    const near = this.enemies.filter((e) => e.hp > 0 && !e.invisible && !e.def.immune && dist(e, p) < 200).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 3);
+    let from = p;
+    for (const e of near) {
+      const steps = 6;
+      for (let i = 0; i <= steps; i++) {
+        const k = i / steps;
+        this.particle(from.x + (e.x - from.x) * k + rand(-6, 6), from.y + (e.y - from.y) * k + rand(-6, 6), 0, 0, i % 2 ? '#e0f8ff' : '#80c8ff', 0.25, 4);
+      }
+      this.damageEnemy(e, p.shotDmg * 1.2, p, false);
+      from = e;
+    }
+  }
+
+  // Phoenix familiar: circles the hero and spits fire at the nearest monster.
+  updateFamiliar(p, dt) {
+    const a = this.time * 3 + p.slot;
+    p.famX = p.x + Math.cos(a) * 30;
+    p.famY = p.y + Math.sin(a) * 30;
+    p.famT = (p.famT || 0) - dt;
+    if (p.famT > 0) return;
+    let best = null, bd = 280;
+    for (const e of this.enemies) { if (e.hp <= 0 || e.invisible || e.def.immune) continue; const d = Math.hypot(e.x - p.famX, e.y - p.famY); if (d < bd) { bd = d; best = e; } }
+    if (!best) return;
+    p.famT = 0.7;
+    const ang = Math.atan2(best.y - p.famY, best.x - p.famX);
+    this.projs.push({ owner: 'player', p, kind: 'fireball', x: p.famX, y: p.famY, vx: Math.cos(ang) * 380, vy: Math.sin(ang) * 380, r: 6, dmg: p.shotDmg, pierce: 0, life: 1.2, hits: new Set(), spin: 0, bounces: 0 });
   }
 
   // Fire Breath power-up: a short cone of flame in front of the hero.
@@ -749,7 +808,11 @@ export class Game {
         break;
       case 'death':
         if (!contact) this.steer(e, p, d, dt);
-        else if (e.cd <= 0) {
+        else if (p.buffs.antideath) {
+          this.onEnemyKilled(e, p);
+          this.text(e.x, e.y - 24, 'DEATH BANISHED!', '#fff080', 2);
+          sfx.powerup();
+        } else if (e.cd <= 0) {
           e.cd = 0.1;
           if (!e.act || this.time - e.act.t > 1) e.act = { type: 'melee', t: this.time };
           if (p.invuln <= 0 && !p.buffs.shield) {
@@ -928,6 +991,7 @@ export class Game {
     }
     for (const it of this.items) {
       if (it.dead || dist(it, pr) > it.r + pr.r) continue;
+      if (it.type === 'poison') { it.dead = true; pr.dead = true; this.burst(it.x, it.y, '#60ff40', 12, 100); this.text(it.x, it.y - 14, 'POISON DESTROYED', '#80ff60', 1.2); return; }
       if (it.type === 'food') {
         it.dead = true; pr.dead = true;
         this.burst(it.x, it.y, '#c08040', 10, 100);
@@ -987,6 +1051,12 @@ export class Game {
 
   pickup(p, it) {
     switch (it.type) {
+      case 'poison':
+        this.hurtPlayer(p, 110, null);
+        this.burst(it.x, it.y, '#60ff40', 18, 120);
+        this.text(it.x, it.y - 10, 'POISONED!', '#80ff60', 1.5);
+        say(`${p.name} ate poisoned food!`, 'poison', 6000);
+        return true;
       case 'food':
         p.hp += FOOD_HEAL; sfx.food(); this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
       case 'gold':
