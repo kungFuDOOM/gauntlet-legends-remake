@@ -59,6 +59,20 @@ export function nextStage(progress) {
   return { realm: 0, stage: 1 };
 }
 
+// ---------- secret heroes ----------
+
+export const SECRET_HEROES = [
+  { cls: 'minotaur', how: 'Defeat the Dragon', test: (p) => !!p.completed[4] },
+  { cls: 'falconess', how: 'Defeat the Chimera', test: (p) => !!p.completed[8] },
+  { cls: 'jackal', how: 'Defeat the Plague Fiend', test: (p) => !!p.completed[12] },
+  { cls: 'tigress', how: 'Recover 12 Rune Stones', test: (p) => runeCount(p) >= 12 },
+];
+const BASE = ['warrior', 'valkyrie', 'wizard', 'archer'];
+
+export function unlockedClasses(progress) {
+  return [...BASE, ...SECRET_HEROES.filter((h) => h.test(progress)).map((h) => h.cls)];
+}
+
 // ---------- shop ----------
 
 export const SHOP = [

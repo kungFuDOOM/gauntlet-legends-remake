@@ -26,6 +26,10 @@ const HERO_STYLE = {
   valkyrie: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: 'Dodge_Forward', meleeSpeed: 2.2, shootSpeed: 2.6 },
   wizard: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: 'Spellcast_Shoot', turbo: 'Spellcast_Long', meleeSpeed: 2.2, shootSpeed: 2.6 },
   archer: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: '2H_Ranged_Shoot', turbo: '2H_Ranged_Shoot', meleeSpeed: 2.4, shootSpeed: 3.2 },
+  minotaur: { idle: '2H_Melee_Idle', melee: '2H_Melee_Attack_Chop', shoot: 'Throw', turbo: '2H_Melee_Attack_Spinning', meleeSpeed: 2, shootSpeed: 2.2 },
+  falconess: { idle: 'Idle', melee: '1H_Melee_Attack_Stab', shoot: '2H_Ranged_Shoot', turbo: '2H_Ranged_Shoot', meleeSpeed: 2.4, shootSpeed: 3.3 },
+  jackal: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: 'Dodge_Forward', meleeSpeed: 2.3, shootSpeed: 2.6 },
+  tigress: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: '2H_Melee_Attack_Spinning', meleeSpeed: 2.6, shootSpeed: 2.8 },
 };
 
 const ENEMY_STYLE = {
@@ -211,7 +215,7 @@ export class Renderer3D {
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
         const t = tileAt(tx, ty);
-        if (t === T.VOID || (t === T.WALL && style !== 'sky')) continue;
+        if (t === T.VOID || (t === T.WALL && style !== 'sky' && !this.isPillar(g, tx, ty))) continue;
         const x = tx * TILE + 16, z = ty * TILE + 16, ry = Math.floor(rnd(ty, tx) * 4) * Math.PI / 2;
         if (style === 'sky') slabs.push({ x, y: -21, z, sx: 32.5, sy: 42, sz: 32.5, color: rnd(tx, ty, 5) < 0.5 ? th.rock : '#7c868e' });
         if (t === T.LAVA) { lava.push({ x, y: -2, z, rx: -Math.PI / 2 }); continue; }
@@ -320,6 +324,7 @@ export class Renderer3D {
     const crackH = style === 'castle' ? WALL_H : style === 'sky' ? 30 : 40;
     const crackColor = style === 'castle' ? th.wallSide : th.rock;
     const crackMat = new THREE.MeshStandardMaterial({ map: crackedTexture(crackColor), roughness: 1 });
+    this.crackMat = crackMat;
     this.spikes = [];
     const spikeGeo = new THREE.ConeGeometry(2.2, 12, 5);
     const spikeMat = new THREE.MeshStandardMaterial({ color: '#c8ccd4', metalness: 0.8, roughness: 0.3, flatShading: true });
@@ -711,6 +716,8 @@ export class Renderer3D {
     if (p.hurtFlash > 0 && !v.wasHurt && !a.busy) a.play('Hit_A', { upper: true, timeScale: 2 });
     v.wasHurt = p.hurtFlash > 0;
     a.flash(p.hurtFlash, '#ff2020');
+    a.fade(p.buffs.invisible ? 0.3 : 1);
+    v.root.position.y = p.buffs.levitate ? 6 + Math.sin(g.time * 4) * 2 : 0;
     a.update(dt);
     v.ring.material.opacity = 0.55 + Math.sin(g.time * 5) * 0.25;
 
@@ -815,6 +822,7 @@ export class Renderer3D {
       return;
     }
     v.root.position.set(pr.x, 18, pr.y);
+    if (pr.super) v.root.scale.setScalar(2);
     const ang = Math.atan2(pr.vx, pr.vy);
     if (pr.kind === 'axe' || pr.kind === 'sword') { v.root.rotation.y = ang; v.spin.rotation.y = pr.spin; }
     else if (pr.kind === 'arrow') v.root.rotation.y = ang;
@@ -839,6 +847,8 @@ export class Renderer3D {
     this.exit.userData.disk.rotation.z = -t * 2.5;
     for (const tc of this.torches) if (tc.halo) tc.halo.scale.setScalar(44 * (1 + Math.sin(t * 17 + tc.x) * 0.1 + Math.sin(t * 29 + tc.z) * 0.06));
     for (const [idx, m] of this.cracked) if (g.tiles[idx] !== T.CRACKED) { this.levelGroup.remove(m); this.cracked.delete(idx); }
+    // X-ray glasses make secret walls glow
+    if (this.crackMat) { const on = g.anyBuff('xray'); this.crackMat.emissive.set(on ? '#40ff80' : '#000000'); this.crackMat.emissiveIntensity = on ? 0.4 + Math.sin(t * 6) * 0.3 : 0; }
     const spikeY = g.spikesUp() ? 0 : -12;
     for (const pins of this.spikes) pins.position.y += (spikeY - pins.position.y) * (spikeY > pins.position.y ? 0.6 : 0.15);
     for (const m of this.lavaMats) { m.map.offset.set(Math.sin(t * 0.3) * 0.08, t * 0.05); }

@@ -5,11 +5,11 @@
 import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
 import { Game } from './game.js';
-import { initAudio, sfx, toggleMute, toggleVoice, say } from './audio.js';
+import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
 import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawMap, drawShop, drawEnding, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
-import { loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
+import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
 const stage = document.getElementById('stage');
@@ -64,7 +64,8 @@ function setState(s) { if (window.__traceStates) console.log(`state ${state} -> 
 function usedSources() { return slots.filter(Boolean).map((s) => s.source); }
 
 function nextFreeClass(taken) {
-  return CLASS_ORDER.find((c) => !taken.includes(c)) || CLASS_ORDER[0];
+  const pool = unlockedClasses(save.progress);
+  return pool.find((c) => !taken.includes(c)) || pool[0];
 }
 
 // ---------- quest save ----------
@@ -137,8 +138,9 @@ function updateSelect(dt) {
     if (!s.ready) {
       const dir = (inp.pressed.right || inp.pressed.down ? 1 : 0) - (inp.pressed.left || inp.pressed.up ? 1 : 0);
       if (dir) {
-        const k = CLASS_ORDER.indexOf(s.cls);
-        s.cls = CLASS_ORDER[(k + dir + CLASS_ORDER.length) % CLASS_ORDER.length];
+        const pool = unlockedClasses(save.progress);
+        const k = Math.max(0, pool.indexOf(s.cls));
+        s.cls = pool[(k + dir + pool.length) % pool.length];
         sfx.select();
       }
       if (inp.pressed.attack) { s.ready = true; sfx.join(); say(CLASSES_NAME(s.cls), `pick${i}`, 500); }
@@ -226,13 +228,24 @@ function updatePlay(dt) {
 
   game.update(dt, input);
 
+  if (game.exitReached && game.level.treasure) {
+    // treasure room over: straight to the merchant with the loot
+    persist();
+    toast = { text: 'Treasure room complete!', t: 2 };
+    shop = game.players.map((p) => (p ? { idx: 0, done: false } : null));
+    setState('shop');
+    return;
+  }
   if (game.exitReached) {
     const n = game.levelNum;
     const info = levelInfo(n);
     const runesBefore = runeCount(save.progress);
+    const unlockedBefore = unlockedClasses(save.progress);
     completeLevel(save.progress, n, game.runesFound);
+    const fresh = unlockedClasses(save.progress).filter((c) => !unlockedBefore.includes(c));
+    for (const c of fresh) say(`A secret hero joins the legend: the ${c}!`, `unlock${c}`, 0);
     persist();
-    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden') };
+    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, unlocked: fresh, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden') };
     if (save.progress.won && n === levelNumber(3, 4)) {
       saveScores(game);
       hiscores = loadScores();
@@ -254,6 +267,12 @@ function updateLevelClear() {
   if (stateT > 1 && (input.firstPressed('attack') || stateT > 8)) {
     for (const p of game.allPlayers()) {
       if (!p.alive) { p.alive = true; p.hp = Math.floor(p.def.hp / 2); }
+    }
+    // beating a guardian earns a treasure room before the shop
+    if (clearInfo.wasBoss && realmOf(clearInfo.level) < 3) {
+      game.startTreasure(realmOf(clearInfo.level));
+      setState('play');
+      return;
     }
     shop = game.players.map((p) => (p ? { idx: 0, done: false } : null));
     setState('shop');
@@ -300,6 +319,18 @@ function updateEnding() {
   if (stateT > 3 && (input.firstPressed('attack') || input.anyStart())) { persist(); game = null; setState('title'); }
 }
 
+// Background music for whatever is on screen.
+function currentTrack() {
+  if (state === 'shop') return 'shop';
+  if (state === 'ending') return 'victory';
+  if ((state === 'play' || state === 'paused' || state === 'levelclear' || state === 'gameover') && game && game.level) {
+    if (game.level.treasure) return 'treasure';
+    if (game.info.isBoss) return 'boss';
+    return game.info.style;
+  }
+  return 'title';
+}
+
 function render() {
   ctx.textBaseline = 'alphabetic';
   if (state === 'loading') {
@@ -327,14 +358,15 @@ function render() {
     r3d.render(game);
     drawGameOverlay(ctx, game, r3d, { minimap: showMinimap, runes: runeCount(save.progress) + game.runesFound.length });
     if (state === 'paused') {
-      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
+      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'M: mute   N: music   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
       const lines = clearInfo.wasBoss
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, '']
         : [`${clearInfo.name} complete`, clearInfo.newRunes ? 'You recovered a hidden Rune Stone!' : clearInfo.hidden ? 'A hidden Rune Stone lies somewhere in this level...' : '', ''];
       for (const p of game.allPlayers()) lines.push(`${p.name}: level ${p.lvl} · ${p.gold} gold`);
       lines.push('', `Rune Stones: ${runeCount(save.progress)} / ${TOTAL_RUNES}`);
-      if (stateT > 1) lines.push('Press Attack to visit the shop');
+      for (const c of clearInfo.unlocked || []) lines.push(`SECRET HERO UNLOCKED: ${c.toUpperCase()}!`);
+      if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? 'Press Attack to enter the Treasure Room!' : 'Press Attack to visit the shop');
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
       const lines = game.allPlayers().map((p) => `${p.name}: level ${p.lvl} · ${p.score} pts`);
@@ -367,6 +399,8 @@ function frame(now) {
     try { localStorage.setItem('gl-remake-pixels', String(level)); } catch { /* storage unavailable */ }
   }
   if (input.key('KeyV')) { toast = { text: toggleVoice() ? 'Announcer ON' : 'Announcer OFF', t: 1.5 }; }
+  if (input.key('KeyN')) { initAudio(); toast = { text: toggleMusic() ? 'Music ON' : 'Music OFF', t: 1.5 }; }
+  playMusic(currentTrack());
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
 
   switch (state) {

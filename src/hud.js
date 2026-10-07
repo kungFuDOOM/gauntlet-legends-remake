@@ -1,6 +1,6 @@
 // 2D overlay drawn over the WebGL view: corner player panels, floating text, banners and menus.
 
-import { VIEW_W, VIEW_H, CLASSES, CLASS_ORDER, POWERUPS, TURBO_COST, MAX_PLAYERS, TILE, xpForLevel } from './config.js';
+import { VIEW_W, VIEW_H, CLASSES, BASE_CLASSES as CLASS_ORDER, POWERUPS, TURBO_COST, MAX_PLAYERS, TILE, xpForLevel } from './config.js';
 import { T } from './level.js';
 import { Input } from './input.js';
 import { SHOP, priceOf } from './campaign.js';
@@ -88,9 +88,17 @@ export function drawGameOverlay(ctx, g, r3d, opts) {
 
   drawBossBar(ctx, g);
   if (!g.boss && opts.runes != null) drawRuneCount(ctx, opts.runes);
+  if (g.treasureT > 0) {
+    ctx.textAlign = 'center';
+    ctx.font = `bold 34px ${SANS}`;
+    const t = Math.ceil(g.treasureT);
+    outlined(ctx, `${t}`, VIEW_W / 2, 80, t <= 5 && Math.floor(g.time * 4) % 2 ? '#ff5040' : '#ffe070', '#000', 6);
+    ctx.font = `bold 12px ${SANS}`;
+    outlined(ctx, 'TREASURE ROOM', VIEW_W / 2, 98, '#ffd860', '#000', 3);
+  }
   drawBanner(ctx, g);
   for (let s = 0; s < MAX_PLAYERS; s++) drawPanel(ctx, g, s);
-  if (opts.minimap) drawMinimap(ctx, g);
+  if (opts.minimap || g.anyBuff('xray')) drawMinimap(ctx, g, g.anyBuff('xray'));
 }
 
 function panelPos(slot) {
@@ -256,7 +264,7 @@ function drawBanner(ctx, g) {
   ctx.globalAlpha = 1;
 }
 
-function drawMinimap(ctx, g) {
+function drawMinimap(ctx, g, xray = false) {
   const maxW = 170, maxH = 120;
   const s = Math.min(maxW / g.w, maxH / g.h);
   const mw = g.w * s, mh = g.h * s;
@@ -266,8 +274,9 @@ function drawMinimap(ctx, g) {
   for (let y = 0; y < g.h; y++)
     for (let x = 0; x < g.w; x++) {
       const i = y * g.w + x;
-      if (!g.explored[i]) continue;
       const t = g.tiles[i];
+      if (xray && t === T.CRACKED) { ctx.fillStyle = Math.floor(g.time * 4) % 2 ? '#40ff80' : '#208040'; ctx.fillRect(ox + x * s - 1, oy + y * s - 1, Math.ceil(s) + 2, Math.ceil(s) + 2); continue; }
+      if (!g.explored[i] && !xray) continue;
       if (t === T.WALL) continue;
       ctx.fillStyle = t === T.DOOR ? '#c08a3a' : t === T.EXIT ? '#6ad0ff' : t === T.SEALED ? '#a05050' : 'rgba(220,210,190,0.4)';
       ctx.fillRect(ox + x * s, oy + y * s, Math.ceil(s), Math.ceil(s));
@@ -339,7 +348,7 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
     'P1: WASD move · SPACE attack · E magic · hold SHIFT + attack = turbo',
     'P2: ARROWS move · ENTER attack · . magic · hold RIGHT SHIFT + attack = turbo',
     'Gamepads: stick move · A attack · B magic · hold X/RB + A = turbo · up to 4 players',
-    'P pause · M mute · V announcer · X pixel size · TAB map',
+    'P pause · M mute · N music · V announcer · X pixel size · TAB map',
   ];
   lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 540 + i * 17, '#e0d4b8', '#000', 3));
   if (hiscores.length) {
@@ -392,6 +401,7 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
     }
     ctx.font = `11px ${SANS}`;
     outlined(ctx, Input.label(slot.source), x + SEL_W / 2, y + 42, '#b8a888', '#000', 2);
+    if (def.secret) { ctx.font = `bold 11px ${SANS}`; outlined(ctx, '★ SECRET HERO ★', x + SEL_W / 2, y + 76, '#ff9af0', '#000', 3); }
     const saved = heroes[slot.cls];
     if (saved) { ctx.font = `bold 12px ${SANS}`; outlined(ctx, `SAVED HERO · LEVEL ${saved.lvl} · ${saved.gold} GOLD`, x + SEL_W / 2, y + 60, '#ffd860', '#000', 3); }
     ctx.font = `bold 26px ${SERIF}`;

@@ -60,6 +60,8 @@ await convert(join(ADV, 'Characters/gltf/Barbarian.glb'), 'warrior', { dropNodes
 await convert(join(ADV, 'Characters/gltf/Knight.glb'), 'valkyrie', { dropNodes: ['1H_Sword_Offhand', 'Badge_Shield', 'Rectangle_Shield', 'Spike_Shield', '2H_Sword'] });
 await convert(join(ADV, 'Characters/gltf/Mage.glb'), 'wizard', { dropNodes: ['Spellbook', 'Spellbook_open', '1H_Wand'] });
 await convert(join(ADV, 'Characters/gltf/Rogue_Hooded.glb'), 'archer', { dropNodes: ['Knife_Offhand', '1H_Crossbow', 'Knife', 'Throwable'] });
+// unhooded rogue: base for the secret Falconess (crossbow) and Tigress (twin knives)
+await convert(join(ADV, 'Characters/gltf/Rogue.glb'), 'rogue', { dropNodes: ['1H_Crossbow', 'Throwable'] });
 
 // Monsters
 for (const s of ['Warrior', 'Minion', 'Rogue', 'Mage']) await convert(join(SKL, `Characters/gltf/Skeleton_${s}.glb`), `skeleton_${s.toLowerCase()}`);

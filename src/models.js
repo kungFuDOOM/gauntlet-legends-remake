@@ -455,5 +455,8 @@ export function buildMarker() {
 }
 
 export function heroColor(cls) {
-  return { warrior: '#ff5030', valkyrie: '#5090ff', wizard: '#ffd040', archer: '#50e070' }[cls];
+  return {
+    warrior: '#ff5030', valkyrie: '#5090ff', wizard: '#ffd040', archer: '#50e070',
+    minotaur: '#d08040', falconess: '#e080e0', jackal: '#e0c060', tigress: '#ff9a30',
+  }[cls] || '#ffffff';
 }

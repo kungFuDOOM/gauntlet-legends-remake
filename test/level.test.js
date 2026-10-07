@@ -87,3 +87,16 @@ test('every level hides exactly one Rune Stone, and secret rooms open only by br
     assert.ok(after[i] >= 0, `level ${n}: breaking the wall must open the way`);
   }
 });
+
+test('treasure rooms are full of loot with a reachable exit and no monsters', async () => {
+  const { generateTreasureRoom } = await import('../src/level.js');
+  for (let r = 0; r < 3; r++) {
+    const L = generateTreasureRoom(r);
+    assert.ok(L.items.filter((i) => i.type === 'gold').length >= 40);
+    assert.equal(L.generators.length, 0);
+    assert.equal(L.enemies.length, 0);
+    const d = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], walkable);
+    assert.ok(d[L.exit.y * L.w + L.exit.x] >= 0);
+    for (const it of L.items) assert.equal(L.tiles[it.y * L.w + it.x], T.FLOOR);
+  }
+});

@@ -40,7 +40,35 @@ export const CLASSES = {
     blurb: 'Fast and rapid-fire. Turbo: arrow volley.',
   },
 };
-export const CLASS_ORDER = ['warrior', 'valkyrie', 'wizard', 'archer'];
+// Secret heroes, unlocked during the quest (see campaign.js).
+Object.assign(CLASSES, {
+  minotaur: {
+    name: 'Minotaur', color: '#c07838', dark: '#5a3418', accent: '#f0e0c0', secret: true,
+    hp: 1000, speed: 112, strength: 30, armor: 0.22, magic: 0.8,
+    shotDmg: 12, shotSpeed: 320, shotCooldown: 0.45, shot: 'axe', turbo: 'spin',
+    blurb: 'Raw strength. Turbo: goring spin.',
+  },
+  falconess: {
+    name: 'Falconess', color: '#d870c8', dark: '#6a2a60', accent: '#ffffff', secret: true,
+    hp: 760, speed: 162, strength: 13, armor: 0.1, magic: 1.3,
+    shotDmg: 8, shotSpeed: 560, shotCooldown: 0.19, shot: 'arrow', turbo: 'volley',
+    blurb: 'Swift as the wind. Turbo: feather storm.',
+  },
+  jackal: {
+    name: 'Jackal', color: '#d0a848', dark: '#4a3a18', accent: '#202020', secret: true,
+    hp: 830, speed: 145, strength: 22, armor: 0.26, magic: 1.2,
+    shotDmg: 10, shotSpeed: 420, shotCooldown: 0.3, shot: 'sword', turbo: 'dash',
+    blurb: 'Guardian of tombs. Turbo: spirit dash.',
+  },
+  tigress: {
+    name: 'Tigress', color: '#ff8a20', dark: '#7a3a08', accent: '#202020', secret: true,
+    hp: 800, speed: 166, strength: 21, armor: 0.12, magic: 1.0,
+    shotDmg: 9, shotSpeed: 470, shotCooldown: 0.24, shot: 'sword', turbo: 'spin',
+    blurb: 'Fierce and fast. Turbo: claw cyclone.',
+  },
+});
+export const BASE_CLASSES = ['warrior', 'valkyrie', 'wizard', 'archer'];
+export const CLASS_ORDER = [...BASE_CLASSES, 'minotaur', 'falconess', 'jackal', 'tigress'];
 
 export const ENEMIES = {
   grunt:    { name: 'Grunt',    hp: 16, speed: 72,  dmg: 9,  r: 11, xp: 5,  score: 10, ai: 'melee',    color: '#8a5a34' },
@@ -55,16 +83,39 @@ export const GENERATOR_HP = 45; // three tiers of 15
 export const MAX_ENEMIES = 110;
 
 export const POWERUPS = {
-  speed:  { name: 'Speed Boots',      color: '#4ad9d9', dur: 20 },
-  rapid:  { name: 'Rapid Fire',       color: '#ff9a3a', dur: 20 },
-  shield: { name: 'Invulnerability',  color: '#ffffff', dur: 12 },
-  triple: { name: 'Triple Shot',      color: '#d94ad9', dur: 20 },
+  speed:     { name: 'Speed Boots',     color: '#4ad9d9', dur: 20 },
+  rapid:     { name: 'Rapid Fire',      color: '#ff9a3a', dur: 20 },
+  shield:    { name: 'Invulnerability', color: '#ffffff', dur: 12 },
+  triple:    { name: 'Three-Way Shot',  color: '#d94ad9', dur: 20 },
+  reflect:   { name: 'Reflect Shot',    color: '#8ad0ff', dur: 20 },  // shots bounce off walls
+  super:     { name: 'Super Shot',      color: '#ffe040', dur: 15 },  // huge piercing shots
+  fire:      { name: 'Fire Breath',     color: '#ff5a20', dur: 15 },  // every attack breathes fire
+  invisible: { name: 'Invisibility',    color: '#b0b8c8', dur: 15 },  // monsters lose track of you
+  levitate:  { name: 'Levitation',      color: '#a0ffb0', dur: 20 },  // float over lava and the void
+  xray:      { name: 'X-Ray Glasses',   color: '#40ff80', dur: 30 },  // reveals secret walls
 };
-export const POWERUP_ORDER = ['speed', 'rapid', 'shield', 'triple'];
+export const POWERUP_ORDER = Object.keys(POWERUPS);
 
 export const TURBO_COST = 35;
 export const MAX_KEYS = 9;
 export const MAX_POTIONS = 9;
+
+// How tough a level is: monsters grow with the level number (1-16) and with party size,
+// rewards grow with the realm. Tuned so the Mountain Kingdom eases you in and the
+// Underworld is a real fight for a full party.
+export function difficulty(n, players = 1) {
+  const k = Math.max(0, n - 1);
+  const extra = Math.max(0, Math.min(players, 4) - 1);
+  const realm = Math.floor(k / 4);
+  return {
+    hp: (1 + 0.11 * k) * (1 + 0.3 * extra),
+    dmg: 1 + 0.07 * k,
+    spawn: (1 + 0.05 * k) * (1 + 0.22 * extra),
+    localCap: 7 + 2 * extra,
+    gold: 1 + 0.3 * realm,
+    xp: 1 + 0.1 * k,
+  };
+}
 
 export function xpForLevel(lvl) {
   return Math.round(80 * Math.pow(lvl, 1.35));

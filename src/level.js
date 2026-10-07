@@ -8,6 +8,8 @@
 // Every style yields the same thing: a tile grid, "areas" (open spaces used for placing
 // things), key-locked gates, and a start/exit pair.
 
+import { POWERUP_ORDER } from './config.js';
+
 export const T = { WALL: 0, FLOOR: 1, DOOR: 2, EXIT: 3, SEALED: 4, LAVA: 5, VOID: 6, BRIDGE: 7, CRACKED: 8, SPIKES: 9 };
 export const GROUND = { DEFAULT: 0, GRASS: 1 };
 
@@ -656,12 +658,12 @@ function populate(n, R, info, map) {
   for (let k = 0; k < 2 + Math.floor(n / 2); k++) addItem('chest', randomAreaCell());
   for (let k = 0; k < 8 + n; k++) addItem('barrel', randomAreaCell());
   for (let k = 0; k < 1 + Math.floor(n / 3); k++) addItem('potion', randomAreaCell());
-  if (n >= 2) addItem('amulet', randomAreaCell(), ['speed', 'rapid', 'shield', 'triple'][ri(0, 3)]);
+  if (n >= 2) addItem('amulet', randomAreaCell(), POWERUP_ORDER[Math.floor(R() * POWERUP_ORDER.length)]);
   // vaults hold the good stuff
   for (const v of vaults) {
     addItem('chest', freeCellIn(v.cells));
     addItem('gem', freeCellIn(v.cells));
-    addItem(R() < 0.5 ? 'potion' : 'amulet', freeCellIn(v.cells), ['speed', 'rapid', 'shield', 'triple'][ri(0, 3)]);
+    addItem(R() < 0.5 ? 'potion' : 'amulet', freeCellIn(v.cells), POWERUP_ORDER[Math.floor(R() * POWERUP_ORDER.length)]);
     for (let k = 0; k < 3; k++) addItem('gold', freeCellIn(v.cells));
   }
 
@@ -693,6 +695,43 @@ function populate(n, R, info, map) {
 
   const rooms = areas.map((a) => ({ cx: a.cx, cy: a.cy, size: a.cells.length, vault: !!a.vault }));
   return { n, w, h, tiles, ground, rooms, start, exit, items, generators, enemies, boss: null, info, doorSegs: doorSegs.length, secret: !!secret };
+}
+
+// ---------- treasure room (bonus round after each guardian) ----------
+
+export function generateTreasureRoom(realm, seed = 4242 + realm * 97) {
+  const R = makeRng(seed);
+  const base = levelInfo(realm * LEVELS_PER_REALM + 1);
+  const info = { ...base, style: 'castle', isBoss: false, treasure: true, stageName: 'Treasure Room', stage: 0 };
+  const w = 30, h = 22;
+  const tiles = grid(w, h, T.WALL);
+  const ground = grid(w, h, 0);
+  for (let y = 3; y <= h - 4; y++) for (let x = 3; x <= w - 4; x++) tiles[y * w + x] = T.FLOOR;
+  // four pillars and a raised dais of grass in the middle
+  for (const [px, py] of [[8, 7], [w - 9, 7], [8, h - 8], [w - 9, h - 8]]) tiles[py * w + px] = T.WALL;
+  for (let y = 9; y <= h - 10; y++) for (let x = 12; x <= w - 13; x++) ground[y * w + x] = GROUND.GRASS;
+  const start = { x: 5, y: Math.floor(h / 2) };
+  const exit = { x: w - 5, y: Math.floor(h / 2) };
+  tiles[exit.y * w + exit.x] = T.EXIT;
+  const items = [];
+  const taken = new Set([start.y * w + start.x, exit.y * w + exit.x]);
+  const put = (type, n) => {
+    for (let k = 0; k < n; k++) {
+      for (let tries = 0; tries < 50; tries++) {
+        const x = 4 + Math.floor(R() * (w - 8)), y = 4 + Math.floor(R() * (h - 8));
+        const i = y * w + x;
+        if (tiles[i] !== T.FLOOR || taken.has(i)) continue;
+        taken.add(i);
+        items.push({ type, x, y });
+        break;
+      }
+    }
+  };
+  put('gold', 46 + realm * 8);
+  put('gem', 8 + realm * 2);
+  put('chest', 6);
+  put('food', 2);
+  return { n: 0, w, h, tiles, ground, rooms: [{ cx: 15, cy: 11, size: 300 }], start, exit, items, generators: [], enemies: [], boss: null, info, doorSegs: 0, treasure: true };
 }
 
 // ---------- boss arenas ----------
@@ -729,7 +768,7 @@ function generateBossLevel(n, seed, info) {
     { type: 'potion', x: 8, y: 18 }, { type: 'potion', x: 5, y: 15 },
     { type: 'gold', x: 18, y: 10 }, { type: 'gold', x: 18, y: 21 }, { type: 'gem', x: 35, y: 15 },
   ];
-  if (R() < 0.7) items.push({ type: 'amulet', x: 6, y: 16, sub: ['speed', 'rapid', 'shield', 'triple'][Math.floor(R() * 4)] });
+  if (R() < 0.7) items.push({ type: 'amulet', x: 6, y: 16, sub: POWERUP_ORDER[Math.floor(R() * POWERUP_ORDER.length)] });
   const generators = [{ type: 'grunt', x: 19, y: 9 }, { type: 'grunt', x: 19, y: 22 }];
   if (info.realm >= 1) generators.push({ type: 'ghost', x: 35, y: 21 }, { type: 'ghost', x: 35, y: 10 });
   for (const it of [...items, ...generators]) tiles[it.y * w + it.x] = T.FLOOR;

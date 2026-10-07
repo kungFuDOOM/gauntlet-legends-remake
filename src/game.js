@@ -2,9 +2,9 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
-import { T, generateLevel, bfs, walkable } from './level.js';
+import { T, generateLevel, generateTreasureRoom, bfs, walkable } from './level.js';
 import { sfx, say } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -50,6 +50,7 @@ export class Game {
   // Drop-in mid game: spawn next to the other players.
   joinMidGame(slot, source, cls, saved = null) {
     const p = this.addPlayer(slot, source, cls, saved);
+    this.refreshDifficulty();
     const anchor = this.livePlayers()[0];
     const pos = anchor ? this.findOpenSpotNear(anchor.x, anchor.y) : this.spawnPoint(slot);
     p.x = pos.x; p.y = pos.y;
@@ -64,7 +65,19 @@ export class Game {
 
   startLevel(n) {
     this.levelNum = n;
-    const L = generateLevel(n);
+    this.loadLevel(generateLevel(n));
+  }
+
+  // Timed bonus round full of gold, no monsters, no health drain.
+  startTreasure(realm) {
+    this.loadLevel(generateTreasureRoom(realm));
+    this.treasureT = 25;
+    this.banner = { text: 'Treasure Room!', sub: 'Grab all the gold you can', t: 2.5 };
+    say('Treasure room! Collect the gold!', 'treasure', 2000);
+  }
+
+  loadLevel(L) {
+    this.treasureT = 0;
     this.level = L;
     this.w = L.w; this.h = L.h; this.tiles = L.tiles;
     this.theme = L.info.theme;
@@ -74,6 +87,7 @@ export class Game {
     this.flash = 0; this.shake = 0; this.exitReached = false; this.boss = null;
     this.flowT = 0; this.exploreT = 0; this.time = 0;
     this.crackHp = new Map(); this.runesFound = [];
+    this.refreshDifficulty();
     this.banner = { text: L.info.stageName, sub: L.info.theme.name, t: 3.5 };
 
     const c = (tx) => tx * TILE + TILE / 2;
@@ -110,11 +124,16 @@ export class Game {
     return { x, y };
   }
 
+  refreshDifficulty() {
+    this.diff = difficulty(this.levelNum, Math.max(1, this.allPlayers().length));
+  }
+
   spawnEnemy(type, x, y) {
     const d = ENEMIES[type];
-    const scale = 1 + (this.levelNum - 1) * 0.1;
+    if (!this.diff) this.refreshDifficulty();
+    const scale = this.diff.hp;
     const e = {
-      kind: 'enemy', type, def: d, x, y, r: d.r, hp: Math.round(d.hp * scale), maxHp: Math.round(d.hp * scale),
+      kind: 'enemy', type, def: d, x, y, r: d.r, hp: Math.round(d.hp * scale), maxHp: Math.round(d.hp * scale), dmgMul: this.diff.dmg,
       speed: d.speed * (1 + Math.min(this.levelNum, 12) * 0.015), cd: rand(0.5, 1.5), hurt: 0,
       phase: Math.random() * 10, invisible: false, drained: 0, walk: Math.random() * 10,
     };
@@ -127,7 +146,7 @@ export class Game {
     const hp = Math.round(b.hp * (1 + 0.35 * (this.livePlayers().length - 1)));
     const e = {
       kind: 'enemy', type: 'boss', def: { ...b, ai: 'boss', dmg: 25, r: 30, xp: 400, score: 5000 },
-      x, y, r: 30, hp, maxHp: hp, speed: b.speed, cd: 2, cd2: 6, cd3: 3, hurt: 0, phase: 0, walk: 0,
+      x, y, r: 30, hp, maxHp: hp, speed: b.speed, dmgMul: this.diff ? this.diff.dmg : 1, cd: 2, cd2: 6, cd3: 3, hurt: 0, phase: 0, walk: 0,
       charging: 0, cvx: 0, cvy: 0,
     };
     this.enemies.push(e);
@@ -143,9 +162,9 @@ export class Game {
 
   // Blocks walking. Open sky (VOID) blocks feet but not shots; monsters also refuse to step
   // into lava, while heroes may wade through it and burn.
-  solid(tx, ty, avoidLava = false) {
+  solid(tx, ty, avoidLava = false, float = false) {
     const t = this.tile(tx, ty);
-    return t === T.WALL || t === T.DOOR || t === T.SEALED || t === T.VOID || t === T.CRACKED || (avoidLava && t === T.LAVA);
+    return t === T.WALL || t === T.DOOR || t === T.SEALED || (t === T.VOID && !float) || t === T.CRACKED || (avoidLava && t === T.LAVA);
   }
 
   blocksShots(tx, ty) {
@@ -174,15 +193,17 @@ export class Game {
     return true;
   }
 
+  anyBuff(name) { return this.livePlayers().some((p) => p.buffs[name]); }
+
   spikeCycle() { return Math.floor(this.time / 2.6); }
   spikesUp() { return this.time % 2.6 < 0.8; }
 
-  collides(x, y, r, avoidLava = false) {
+  collides(x, y, r, avoidLava = false, float = false) {
     const x0 = Math.floor((x - r) / TILE), x1 = Math.floor((x + r) / TILE);
     const y0 = Math.floor((y - r) / TILE), y1 = Math.floor((y + r) / TILE);
     for (let ty = y0; ty <= y1; ty++)
       for (let tx = x0; tx <= x1; tx++) {
-        if (!this.solid(tx, ty, avoidLava)) continue;
+        if (!this.solid(tx, ty, avoidLava, float)) continue;
         const cx = Math.max(tx * TILE, Math.min(x, tx * TILE + TILE));
         const cy = Math.max(ty * TILE, Math.min(y, ty * TILE + TILE));
         if ((x - cx) ** 2 + (y - cy) ** 2 < r * r) return true;
@@ -193,8 +214,9 @@ export class Game {
   move(e, dx, dy) {
     let blocked = false;
     const avoid = e.kind === 'enemy' && e.type !== 'ghost';
-    if (dx) { if (!this.collides(e.x + dx, e.y, e.r, avoid)) e.x += dx; else blocked = true; }
-    if (dy) { if (!this.collides(e.x, e.y + dy, e.r, avoid)) e.y += dy; else blocked = true; }
+    const float = e.kind === 'player' && !!e.buffs.levitate;
+    if (dx) { if (!this.collides(e.x + dx, e.y, e.r, avoid, float)) e.x += dx; else blocked = true; }
+    if (dy) { if (!this.collides(e.x, e.y + dy, e.r, avoid, float)) e.y += dy; else blocked = true; }
     return blocked;
   }
 
@@ -278,6 +300,10 @@ export class Game {
 
   update(dt, input) {
     this.time += dt;
+    if (this.treasureT > 0) {
+      this.treasureT -= dt;
+      if (this.treasureT <= 0 || !this.items.some((i) => i.type === 'gold' || i.type === 'gem' || i.type === 'chest')) { this.treasureT = 0.0001; this.exitReached = true; }
+    }
     if (this.banner) { this.banner.t -= dt; if (this.banner.t <= 0) this.banner = null; }
     this.flash = Math.max(0, this.flash - dt * 2);
     this.shake = Math.max(0, this.shake - dt * 20);
@@ -331,8 +357,8 @@ export class Game {
     p.warnT -= dt;
     for (const k of Object.keys(p.buffs)) { p.buffs[k] -= dt; if (p.buffs[k] <= 0) delete p.buffs[k]; }
 
-    // Health drains over time.
-    p.drain += HEALTH_DRAIN * dt;
+    // Health drains over time (not in the treasure room).
+    if (!this.treasureT) p.drain += HEALTH_DRAIN * dt;
     if (p.drain >= 1) { const d = Math.floor(p.drain); p.drain -= d; p.hp -= d; }
     this.healthWarnings(p);
     if (p.hp <= 0) { this.killPlayer(p); return; }
@@ -359,15 +385,25 @@ export class Game {
       if (blocked && p.keys > 0) this.tryOpenDoor(p, mx, my);
     }
 
+    // Levitation: remember solid ground; if it wears off over the void, land back on it
+    const under = this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE));
+    if (under !== T.VOID && under !== T.LAVA) { p.safeX = p.x; p.safeY = p.y; }
+    else if (under === T.VOID && !p.buffs.levitate) {
+      p.x = p.safeX ?? p.x; p.y = p.safeY ?? p.y;
+      this.text(p.x, p.y - 20, 'FELL!', '#ff8080', 1.2);
+      this.hurtPlayer(p, 40, null);
+      if (!p.alive) return;
+    }
+
     // Spike traps stab anyone standing on them while they're up (once per cycle)
-    if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.SPIKES && this.spikesUp() && p.spikeHit !== this.spikeCycle()) {
+    if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.SPIKES && this.spikesUp() && p.spikeHit !== this.spikeCycle() && !p.buffs.levitate) {
       p.spikeHit = this.spikeCycle();
       this.hurtPlayer(p, 40, null);
       if (!p.alive) return;
     }
 
     // Lava burns anyone wading through it
-    if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.LAVA && !p.dash && p.invuln <= 0 && !p.buffs.shield) {
+    if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.LAVA && !p.dash && p.invuln <= 0 && !p.buffs.shield && !p.buffs.levitate) {
       p.burn = (p.burn || 0) + 45 * dt;
       if (p.burn >= 1) { const d = Math.floor(p.burn); p.burn -= d; p.hp -= d; }
       p.hurtFlash = Math.max(p.hurtFlash, 0.05);
@@ -439,6 +475,7 @@ export class Game {
   }
 
   hurtPlayer(p, amount, source) {
+    if (source && source.dmgMul) amount *= source.dmgMul;
     if (!p.alive || p.invuln > 0 || p.buffs.shield || p.dash) return;
     const dmg = Math.max(1, Math.round(amount * (1 - p.armor)));
     p.hp -= dmg;
@@ -451,6 +488,7 @@ export class Game {
   attack(p) {
     const cd = p.def.shotCooldown * (p.buffs.rapid ? 0.5 : 1);
     p.shotCd = cd;
+    if (p.buffs.fire) { this.breathFire(p); sfx.shoot('fireball'); }
     // Melee if something is right in front of us.
     const reach = p.r + 26;
     const targets = [];
@@ -488,11 +526,28 @@ export class Game {
   }
 
   fire(p, angle, { dmg = p.shotDmg, pierce = 0, speed = p.def.shotSpeed, kind = p.def.shot, life = 1.6 } = {}) {
+    const sup = !!p.buffs.super;
     this.projs.push({
       owner: 'player', p, kind, x: p.x + Math.cos(angle) * 10, y: p.y + Math.sin(angle) * 10,
-      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: kind === 'fireball' ? 7 : 5,
-      dmg, pierce, life, hits: new Set(), spin: 0,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (kind === 'fireball' ? 7 : 5) * (sup ? 2 : 1),
+      dmg: dmg * (sup ? 1.7 : 1), pierce: pierce + (sup ? 3 : 0), life, hits: new Set(), spin: 0,
+      super: sup, bounces: p.buffs.reflect ? 3 : 0,
     });
+  }
+
+  // Fire Breath power-up: a short cone of flame in front of the hero.
+  breathFire(p) {
+    const range = 110;
+    for (let i = 0; i < 14; i++) {
+      const a = Math.atan2(p.fy, p.fx) + (Math.random() - 0.5) * 0.9, sp = rand(160, 320);
+      this.particle(p.x + p.fx * 14, p.y + p.fy * 14, Math.cos(a) * sp, Math.sin(a) * sp, Math.random() < 0.5 ? '#ff6a10' : '#ffd040', 0.4, 5);
+    }
+    const inCone = (o) => {
+      const dx = o.x - p.x, dy = o.y - p.y, d = Math.hypot(dx, dy);
+      return d < range + (o.r || 0) && (dx * p.fx + dy * p.fy) / (d || 1) > 0.55;
+    };
+    for (const e of this.enemies) if (e.hp > 0 && !e.def.immune && inCone(e)) this.damageEnemy(e, p.shotDmg * 1.3, p, false);
+    for (const gn of this.gens) if (gn.hp > 0 && inCone(gn)) this.damageGen(gn, p.shotDmg * 0.8, p);
   }
 
   turboAttack(p) {
@@ -572,7 +627,7 @@ export class Game {
   onEnemyKilled(e, p) {
     e.hp = 0;
     this.burst(e.x, e.y, e.def.color || '#888', e.type === 'boss' ? 80 : 12, e.type === 'boss' ? 300 : 140);
-    if (p) { p.score += e.def.score; this.gainXp(p, e.def.xp); }
+    if (p) { p.score += e.def.score; this.gainXp(p, Math.round(e.def.xp * this.diff.xp)); }
     if (e.type === 'death') this.text(e.x, e.y - 20, 'DEATH DEFEATED! +1000', '#ffe070', 2);
     if (e.type === 'boss') this.onBossKilled(e);
   }
@@ -617,10 +672,10 @@ export class Game {
     g.timer -= dt;
     if (g.timer > 0) return;
     const tier = Math.ceil(g.hp / (GENERATOR_HP / 3));
-    g.timer = rand(2.2, 3.6) / (0.6 + tier * 0.25) / (1 + Math.min(this.levelNum, 15) * 0.04);
+    g.timer = rand(2.2, 3.6) / (0.6 + tier * 0.25) / this.diff.spawn;
     if (this.enemies.length >= MAX_ENEMIES) return;
     const local = this.enemies.filter((e) => Math.abs(e.x - g.x) < 200 && Math.abs(e.y - g.y) < 200).length;
-    if (local >= 8) return;
+    if (local >= this.diff.localCap) return;
     const a = Math.random() * Math.PI * 2;
     const x = g.x + Math.cos(a) * 26, y = g.y + Math.sin(a) * 26;
     const r = ENEMIES[g.type].r;
@@ -636,6 +691,7 @@ export class Game {
     let best = null, bd = Infinity;
     for (const p of this.livePlayers()) {
       const d = dist(p, e);
+      if (p.buffs.invisible && d > 44) continue; // invisible heroes go unnoticed unless bumped into
       if (d < bd) { bd = d; best = p; }
     }
     return [best, bd];
@@ -710,7 +766,7 @@ export class Game {
         if (d < def.range + 40 && e.cd <= 0) {
           e.cd = def.cooldown * rand(0.8, 1.2);
           e.act = { type: 'throw', t: this.time };
-          this.projs.push({ owner: 'enemy', kind: 'lob', x: e.x, y: e.y, sx: e.x, sy: e.y, tx: p.x + rand(-20, 20), ty: p.y + rand(-20, 20), t: 0, T: 1.0, dmg: def.dmg, r: 6, z: 0 });
+          this.projs.push({ owner: 'enemy', kind: 'lob', x: e.x, y: e.y, sx: e.x, sy: e.y, tx: p.x + rand(-20, 20), ty: p.y + rand(-20, 20), t: 0, T: 1.0, dmg: def.dmg * (e.dmgMul || 1), r: 6, z: 0 });
         }
         break;
       case 'shooter':
@@ -738,6 +794,7 @@ export class Game {
   }
 
   enemyShot(e, angle, kind, dmg, speed) {
+    dmg *= e.dmgMul || 1;
     this.projs.push({ owner: 'enemy', kind, x: e.x, y: e.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: 6, dmg, life: 3 });
     sfx.enemyShot();
   }
@@ -831,8 +888,22 @@ export class Game {
     pr.y += pr.vy * dt;
     pr.spin = (pr.spin || 0) + dt * 20;
     if (this.blocksShots(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE))) {
-      pr.dead = true;
       if (pr.owner === 'player') this.damageCracked(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE), pr.dmg);
+      if (pr.bounces > 0 && this.tile(Math.floor(pr.x / TILE), Math.floor(pr.y / TILE)) !== T.CRACKED) {
+        // Reflect Shot: bounce off the wall face that was hit
+        const px = pr.x - pr.vx * dt, py = pr.y - pr.vy * dt;
+        const hitX = this.blocksShots(Math.floor(pr.x / TILE), Math.floor(py / TILE));
+        const hitY = this.blocksShots(Math.floor(px / TILE), Math.floor(pr.y / TILE));
+        pr.x = px; pr.y = py;
+        if (hitX || !hitY) pr.vx = -pr.vx;
+        if (hitY || !hitX) pr.vy = -pr.vy;
+        pr.bounces--;
+        pr.hits.clear();
+        pr.life = Math.max(pr.life, 0.9);
+        this.burst(pr.x, pr.y, '#8ad0ff', 4, 60);
+        return;
+      }
+      pr.dead = true;
       this.burst(pr.x - pr.vx * dt, pr.y - pr.vy * dt, pr.owner === 'player' ? '#ddd' : '#ff8040', 4, 60);
       return;
     }
@@ -896,7 +967,7 @@ export class Game {
       const a = (i / drops.length) * Math.PI * 2;
       this.items.push({
         type, x: it.x + Math.cos(a) * 14 * (drops.length > 1 ? 1 : 0), y: it.y + Math.sin(a) * 14 * (drops.length > 1 ? 1 : 0),
-        r: 10, bob: Math.random() * 6, sub: type === 'amulet' ? POWERUP_ORDER[Math.floor(Math.random() * 4)] : undefined,
+        r: 10, bob: Math.random() * 6, sub: type === 'amulet' ? POWERUP_ORDER[Math.floor(Math.random() * POWERUP_ORDER.length)] : undefined,
       });
     });
   }
@@ -919,9 +990,9 @@ export class Game {
       case 'food':
         p.hp += FOOD_HEAL; sfx.food(); this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
       case 'gold':
-        p.score += 100; p.gold += 50; sfx.gold(); this.text(it.x, it.y - 10, '+50 GOLD', '#ffe070'); return true;
+        { const gv = Math.round(50 * this.diff.gold); p.score += 100; p.gold += gv; sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#ffe070'); return true; }
       case 'gem':
-        p.score += 500; p.gold += 200; sfx.gold(); this.text(it.x, it.y - 10, '+200 GOLD', '#80e0ff'); return true;
+        { const gv = Math.round(200 * this.diff.gold); p.score += 500; p.gold += gv; sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#80e0ff'); return true; }
       case 'rune': {
         const guardian = it.sub !== 'hidden';
         p.score += guardian ? 5000 : 2500;

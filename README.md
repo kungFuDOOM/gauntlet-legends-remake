@@ -24,7 +24,7 @@ Any static file server works too, e.g. `python3 -m http.server`. The game uses E
 | **Player 2** (keyboard) | Arrows | Enter / `/` | `.` / `'` | Right Shift / `,` |
 | **Gamepads** (up to 4) | Stick / D-pad | A / RT | B / Y | X / RB + A |
 
-`P`/`Esc`/Start pauses · `M` mutes sound · `V` turns the announcer on or off · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
+`P`/`Esc`/Start pauses · `M` mutes sound · `N` toggles music · `V` turns the announcer on or off · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
 
 Up to **4 players** can play co-op on one screen. Press Attack on any unused keyboard or gamepad to join, even in the middle of a level.
 
@@ -36,6 +36,8 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Realm map:** choose where to go. Stages in a realm open one after another, ending with its **guardian** (the Dragon, the Chimera, the Plague Fiend). The **Underworld** stays sealed until all three guardians are defeated; Skorne waits at its end.
 - **Rune Stones:** each guardian carries one, and every level hides another in a **secret room behind a cracked wall**. Smash the wall to get in. There are 16 in all.
 - **Gold and the merchant:** treasure gives gold. After each level the party visits the merchant's stall to buy food, magic potions, keys and permanent **Strength / Armor / Speed / Magic** upgrades. Each player shops with their own gold.
+- **Treasure rooms:** beat a guardian and the party gets 25 seconds in a vault heaped with gold, gems and chests.
+- **Secret heroes:** four more heroes join as the quest goes on: the **Minotaur** (defeat the Dragon), the **Falconess** (defeat the Chimera), the **Jackal** (defeat the Plague Fiend) and the **Tigress** (recover 12 Rune Stones).
 - **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
 
 
@@ -52,7 +54,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Death** drains your health and can only be destroyed by magic.
 - **Keys and doors.** Keys are placed so a level can never become unwinnable, whichever doors you open first. This is checked by the tests.
 - **RPG progression.** Kills give experience; levelling up raises strength, shot damage, armor, speed and magic.
-- **Amulets** give temporary powers: Speed, Rapid Fire, Invulnerability and Triple Shot. Treasure chests drop random loot.
+- **Amulets** give temporary powers: Speed Boots, Rapid Fire, Invulnerability, Three-Way Shot, **Reflect Shot** (shots bounce off walls), **Super Shot** (huge piercing shots), **Fire Breath** (every attack scorches what's in front of you), **Invisibility** (monsters lose track of you), **Levitation** (float over lava and open sky) and **X-Ray Glasses** (secret walls glow and show on the map). Treasure chests drop random loot.
 - **Four realms, each built differently**, like the original's level design:
   - **Mountain Kingdom:** winding canyon trails between jagged cliffs, crossed by lava rivers with wooden bridges
   - **Castle Stronghold:** grassy courtyards ringed by pillars, joined by wide stone halls
@@ -64,6 +66,8 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Pixel-art rendering:** the 3D view is drawn at a low resolution and scaled up with hard pixel edges for a retro look (press `X` to change it).
 - **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
+- **Music** composed on the fly for the title, each realm, boss fights, the shop, treasure rooms and the victory screen.
+- **Difficulty that scales** with the level and the size of the party: monsters get tougher and generators busier further into the quest and with more players, while treasure is worth more in later realms.
 - **Arcade announcer** via your browser's speech synthesis ("Warrior needs food, badly!"). Also: a shared camera that keeps the party together, a minimap of explored areas, a high score table, and drop-in "continue" after dying.
 
 ## Project layout

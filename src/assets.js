@@ -9,7 +9,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const MODEL_SCALE = 16; // KayKit metres -> game units (one tile = 32 units = 2 m)
 
-const CHARACTERS = ['warrior', 'valkyrie', 'wizard', 'archer', 'skeleton_warrior', 'skeleton_minion', 'skeleton_rogue', 'skeleton_mage'];
+const CHARACTERS = ['warrior', 'valkyrie', 'wizard', 'archer', 'minotaur', 'falconess', 'jackal', 'tigress', 'skeleton_warrior', 'skeleton_minion', 'skeleton_rogue', 'skeleton_mage'];
+// secret heroes are restyled from these base models
+const CHAR_SOURCE = { minotaur: 'warrior', falconess: 'rogue', jackal: 'valkyrie', tigress: 'rogue' };
 const PROPS = [
   'weapon_axe', 'weapon_blade', 'weapon_staff', 'weapon_crossbow',
   'torch', 'barrel', 'chest', 'chest_gold', 'key', 'coins', 'coins_big', 'food', 'food_b', 'potion', 'pillar', 'column',
@@ -44,6 +46,23 @@ const HERO_STYLE = {
     hue: [],
     cape: '#1a7a32', hide: [], scale: [0.97, 1, 0.97],
   },
+  // secret heroes
+  minotaur: {
+    hue: [[190, 235, 20, 0, 0.7], [0, 40, 22, 0, 0.55], [345, 360, 22, 0, 0.55]], // blue cloth, red hair, skin -> dark hide
+    cape: '#5a3016', hide: ['Barbarian_Hat'], scale: [1.16, 1.08, 1.16],
+  },
+  falconess: {
+    hue: [[70, 175, 308, 0.1]],                     // green leathers -> orchid
+    cape: '#f0e8f8', hide: ['Knife', 'Knife_Offhand'], scale: [0.95, 1, 0.95],
+  },
+  jackal: {
+    hue: [[340, 360, 44, 0.15], [0, 15, 44, 0.15]],  // red -> gold
+    cape: '#1a1a1e', hide: ['Knight_Helmet'], scale: [1, 1.03, 1],
+  },
+  tigress: {
+    hue: [[70, 175, 26, 0.2]],                       // green -> tiger orange
+    cape: '#ff8a20', hide: ['2H_Crossbow'], scale: [0.96, 1, 0.96],
+  },
 };
 
 function rgbToHsl(r, g, b) {
@@ -68,9 +87,9 @@ function hueShiftTexture(tex, rules) {
   for (let i = 0; i < d.length; i += 4) {
     const [h, sat, l] = rgbToHsl(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
     if (sat < 0.22) continue;
-    for (const [from, to, target, boost = 0] of rules) {
+    for (const [from, to, target, boost = 0, lightMul = 1] of rules) {
       if (h < from || h > to) continue;
-      col.setHSL(target / 360, Math.min(1, sat + boost), boost ? Math.min(0.62, l + 0.08) : l);
+      col.setHSL(target / 360, Math.min(1, sat + boost), (boost ? Math.min(0.62, l + 0.08) : l) * lightMul);
       d[i] = col.r * 255; d[i + 1] = col.g * 255; d[i + 2] = col.b * 255;
       break;
     }
@@ -153,6 +172,57 @@ function dressHero(name, scene) {
       if (q) { q.position.set(0.25, 0.3, -0.45); q.rotation.set(0.25, 0, -0.35); chest.add(q); }
     }
     add(head, new THREE.ConeGeometry(0.06, 0.7, 6), mat('#d83a28'), [0.42, 1.1, -0.2], [0.3, 0, -0.5]);
+  } else if (name === 'minotaur') {
+    // bull's head: shaggy crown, broad snout with a ring, great curved horns
+    const hide = mat('#5a3420', { roughness: 0.9, flatShading: false });
+    add(head, new THREE.SphereGeometry(0.66, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.55), hide, [0, 0.66, -0.02], [0, 0, 0], [1.05, 0.95, 1.05]);
+    add(head, new THREE.SphereGeometry(0.34, 12, 9), mat('#8a5a3a', { flatShading: false }), [0, 0.22, 0.56], [0, 0, 0], [1.1, 0.75, 0.75]);
+    for (const s of [-1, 1]) add(head, new THREE.SphereGeometry(0.06, 8, 6), mat('#1a1010'), [s * 0.12, 0.26, 0.82]);
+    add(head, new THREE.TorusGeometry(0.12, 0.03, 6, 12), mat('#e8c040', { metalness: 0.8, roughness: 0.3 }), [0, 0.1, 0.8]);
+    const horn = mat('#f0e6c8', { roughness: 0.45 });
+    for (const s of [-1, 1]) {
+      const base = add(head, new THREE.ConeGeometry(0.17, 0.75, 8), horn, [s * 0.72, 0.85, 0.05], [0, 0, -s * 1.45]);
+      add(base, new THREE.ConeGeometry(0.1, 0.55, 8), horn, [0, 0.5, 0], [s * 0.3, 0, s * 0.9]);
+      add(head, new THREE.ConeGeometry(0.1, 0.28, 6), hide, [s * 0.62, 0.55, -0.05], [0, 0, -s * 1.9]);
+    }
+  } else if (name === 'falconess') {
+    // golden beak, feather crest, folded wings
+    add(head, new THREE.ConeGeometry(0.13, 0.42, 8), mat('#f0b020', { metalness: 0.3 }), [0, 0.35, 0.68], [Math.PI / 2 + 0.3, 0, 0]);
+    const plume = [mat('#ffffff'), mat('#b048a8'), mat('#ffffff')];
+    plume.forEach((m, i) => add(head, new THREE.ConeGeometry(0.08, 0.8, 6), m, [(i - 1) * 0.16, 1.15, -0.25], [-0.6, 0, (i - 1) * 0.25]));
+    if (chest) {
+      const wing = mat('#f4f0fa', { side: THREE.DoubleSide, roughness: 0.8 });
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0); shape.lineTo(0.9, 0.5); shape.lineTo(1.1, 0.1); shape.lineTo(0.95, -0.25); shape.lineTo(0.75, -0.1); shape.lineTo(0.6, -0.45); shape.lineTo(0.4, -0.2); shape.lineTo(0.2, -0.5); shape.lineTo(0, -0.15);
+      const geo = new THREE.ShapeGeometry(shape);
+      for (const s of [-1, 1]) add(chest, geo, wing, [s * 0.18, 0.25, -0.42], [0.2, s * 0.5, 0], [s, 1, 1]);
+    }
+  } else if (name === 'jackal') {
+    // black jackal mask with tall ears, striped royal headdress
+    const black = mat('#18181c', { roughness: 0.5, flatShading: false });
+    const gold = mat('#e0b040', { metalness: 0.7, roughness: 0.3 });
+    add(head, new THREE.SphereGeometry(0.62, 12, 9, 0, Math.PI * 2, 0, Math.PI * 0.6), black, [0, 0.62, 0], [0, 0, 0], [1, 1, 1.05]);
+    add(head, new THREE.BoxGeometry(0.3, 0.26, 0.55), black, [0, 0.38, 0.62], [0.12, 0, 0]);
+    add(head, new THREE.BoxGeometry(0.12, 0.08, 0.06), mat('#ffcc30', { emissive: '#ffaa00', emissiveIntensity: 1 }), [-0.17, 0.62, 0.55]);
+    add(head, new THREE.BoxGeometry(0.12, 0.08, 0.06), mat('#ffcc30', { emissive: '#ffaa00', emissiveIntensity: 1 }), [0.17, 0.62, 0.55]);
+    for (const s of [-1, 1]) add(head, new THREE.ConeGeometry(0.14, 0.7, 4), black, [s * 0.32, 1.3, -0.05], [0, 0, -s * 0.15]);
+    for (let i = 0; i < 4; i++) add(head, new THREE.BoxGeometry(0.9 + i * 0.06, 0.09, 0.12), i % 2 ? mat('#2050c0') : gold, [0, 0.35 - i * 0.16, -0.55]);
+    add(head, new THREE.TorusGeometry(0.62, 0.05, 6, 18), gold, [0, 0.66, 0], [Math.PI / 2, 0, 0]);
+  } else if (name === 'tigress') {
+    // striped cat ears and a long tail
+    const fur = mat('#ff8a20', { roughness: 0.8 });
+    const stripe = mat('#201410');
+    for (const s of [-1, 1]) {
+      const ear = add(head, new THREE.ConeGeometry(0.18, 0.4, 4), fur, [s * 0.42, 1.12, -0.05], [0, 0, -s * 0.3]);
+      add(ear, new THREE.ConeGeometry(0.08, 0.16, 4), stripe, [0, 0.14, 0.02]);
+    }
+    const hips = scene.getObjectByName('hips');
+    if (hips) {
+      let seg = hips;
+      for (let i = 0; i < 6; i++) {
+        seg = add(seg, new THREE.CylinderGeometry(0.06, 0.07, 0.3, 8), i % 2 ? stripe : fur, i === 0 ? [0, 0.1, -0.35] : [0, 0.28, 0], [i === 0 ? -1.1 : -0.25, 0, 0]);
+      }
+    }
   }
 }
 
@@ -183,7 +253,7 @@ export async function loadAssets(onProgress = () => {}) {
   let done = 0;
   // props first: hero styling borrows some of them (e.g. the archer's quiver)
   const load = async (name) => {
-    const gltf = await loader.loadAsync(`assets/models/${name}.glb`);
+    const gltf = await loader.loadAsync(`assets/models/${CHAR_SOURCE[name] || name}.glb`);
     if (name === 'anims') for (const c of gltf.animations) assets.clips[c.name] = c;
     else if (CHARACTERS.includes(name)) assets.chars[name] = prepareCharacter(gltf.scene, name);
     else assets.props[name] = prepareProp(gltf.scene);
