@@ -64,6 +64,7 @@ await convert(join(ADV, 'Characters/gltf/Rogue_Hooded.glb'), 'archer', { dropNod
 // Monsters
 for (const s of ['Warrior', 'Minion', 'Rogue', 'Mage']) await convert(join(SKL, `Characters/gltf/Skeleton_${s}.glb`), `skeleton_${s.toLowerCase()}`);
 for (const w of ['Axe', 'Blade', 'Staff', 'Crossbow']) await convert(join(SKL, `Assets/gltf/Skeleton_${w}.gltf`), `weapon_${w.toLowerCase()}`);
+await convert(join(ADV, 'Assets/gltf/quiver.gltf'), 'quiver');
 
 // Shared animation library
 await convert(join(SKL, 'Characters/gltf/Skeleton_Minion.glb'), 'anims', {
