@@ -4,7 +4,7 @@ import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
   POWERUPS, POWERUP_ORDER, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
-import { T, generateLevel, generateTreasureRoom, generateHub, bfs, walkable } from './level.js';
+import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable } from './level.js';
 import { sfx, say } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -17,6 +17,7 @@ export class Game {
     this.players = [];
     this.levelNum = 1;
     this.time = 0;
+    this.stats = { magic: 0, turbo: 0, food: 0 }; // things the tutorial waits for
   }
 
   // ---------- setup ----------
@@ -90,6 +91,19 @@ export class Game {
       for (const pt of L.portals) if (Math.hypot(p.x - (pt.x + 0.5) * TILE, p.y - (pt.y + 0.5) * TILE) < 30) this.hubFocus = { type: 'portal', realm: pt.realm };
       if (Math.hypot(p.x - (L.shop.x + 0.5) * TILE, p.y - (L.shop.y + 1.5) * TILE) < 40) this.hubFocus = { type: 'shop' };
     }
+  }
+
+  // The Training Grounds: src/tutorial.js drives the lessons.
+  startTutorial() {
+    this.levelNum = 0;
+    this.loadLevel(generateTutorial());
+  }
+
+  addGenerator(type, tx, ty) {
+    const g = { type, x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2, r: 14, hp: GENERATOR_HP, timer: 1, hurt: 0 };
+    this.gens.push(g);
+    this.burst(g.x, g.y, '#9a8a6a', 20, 140);
+    return g;
   }
 
   // Timed bonus round full of gold, no monsters, no health drain.
@@ -383,7 +397,7 @@ export class Game {
     for (const k of Object.keys(p.buffs)) { p.buffs[k] -= dt; if (p.buffs[k] <= 0) delete p.buffs[k]; }
 
     // Health drains over time (not in the treasure room).
-    if (!this.treasureT && !this.level.hub) p.drain += HEALTH_DRAIN * dt;
+    if (!this.treasureT && !this.level.hub && !this.level.tutorial) p.drain += HEALTH_DRAIN * dt;
     if (p.drain >= 1) { const d = Math.floor(p.drain); p.drain -= d; p.hp -= d; }
     this.healthWarnings(p);
     if (p.hp <= 0) { this.killPlayer(p); return; }
@@ -509,6 +523,7 @@ export class Game {
     p.hurtFlash = 0.15;
     sfx.hurt();
     this.text(p.x + rand(-6, 6), p.y - 18, `-${dmg}`, '#ff6060', 0.7);
+    if (this.level.tutorial) p.hp = Math.max(p.hp, 60); // nobody dies while learning
     if (p.hp <= 0) this.killPlayer(p);
   }
 
@@ -613,6 +628,7 @@ export class Game {
     p.act = { type: 'turbo', t: this.time };
     p.turbo -= TURBO_COST;
     p.shotCd = 0.5;
+    this.stats.turbo++;
     sfx.turbo();
     this.shake = 6;
     switch (p.def.turbo) {
@@ -648,6 +664,7 @@ export class Game {
     if (!fromShot) {
       if (p.potions <= 0) return;
       p.potions--;
+      this.stats.magic++;
     }
     sfx.potion();
     this.flash = 1;
@@ -1058,7 +1075,7 @@ export class Game {
         say(`${p.name} ate poisoned food!`, 'poison', 6000);
         return true;
       case 'food':
-        p.hp += FOOD_HEAL; sfx.food(); this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
+        p.hp += FOOD_HEAL; sfx.food(); this.stats.food++; this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
       case 'gold':
         { const gv = Math.round(50 * this.diff.gold); p.score += 100; p.gold += gv; sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#ffe070'); return true; }
       case 'gem':

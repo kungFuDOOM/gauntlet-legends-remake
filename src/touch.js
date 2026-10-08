@@ -20,6 +20,8 @@ const CSS = `
 #touch .btn { position: absolute; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: auto;
   font: bold 13px 'Trebuchet MS', sans-serif; color: #fff; text-shadow: 0 1px 2px #000; border: 2px solid rgba(255,255,255,0.55); }
 #touch .btn.down { filter: brightness(1.6); transform: scale(0.93); }
+#touch .btn.pulse { animation: tpulse 0.5s ease-in-out 6 alternate; }
+@keyframes tpulse { from { box-shadow: 0 0 0 0 rgba(255,255,255,0.9); } to { box-shadow: 0 0 0 16px rgba(255,255,255,0); transform: scale(1.12); } }
 #touch .attack { width: 92px; height: 92px; right: 5%; bottom: 10%; background: rgba(200,50,30,0.55); font-size: 15px; }
 #touch .magic { width: 64px; height: 64px; right: calc(5% + 100px); bottom: 7%; background: rgba(70,90,230,0.55); }
 #touch .turbo { width: 64px; height: 64px; right: calc(5% + 14px); bottom: calc(10% + 104px); background: rgba(230,150,20,0.6); }
@@ -135,6 +137,16 @@ export class TouchControls {
       el.addEventListener('pointerup', up);
       el.addEventListener('pointercancel', up);
     }
+  }
+
+  // Make a button throb for a few seconds to draw the eye to it.
+  pulse(b) {
+    const el = this.root.querySelector(`.btn[data-b="${b}"]`);
+    if (!el) return;
+    el.classList.remove('pulse');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('pulse');
+    setTimeout(() => el.classList.remove('pulse'), 3200);
   }
 
   // Raw state for Input.poll, in the same shape as a gamepad.

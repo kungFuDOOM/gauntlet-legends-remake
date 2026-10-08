@@ -721,6 +721,41 @@ export function generateHub() {
   };
 }
 
+// ---------- training grounds (the first-time tutorial) ----------
+
+// A row of small rooms joined by gates. src/tutorial.js opens each gate once the lesson in
+// the room before it is done; the gate out of the key room is a real locked door.
+export const TUTORIAL_ROOMS = 8, TUTORIAL_PITCH = 12, TUTORIAL_MID = 6;
+export const tutorialRoomX = (k) => k * TUTORIAL_PITCH + TUTORIAL_PITCH / 2; // centre column of room k
+
+export function generateTutorial() {
+  const base = levelInfo(LEVELS_PER_REALM + 1); // castle look
+  const info = { ...base, style: 'castle', isBoss: false, tutorial: true, stageName: 'Training Grounds', stage: 0, theme: { ...base.theme, name: 'Learn the ropes' } };
+  const P = TUTORIAL_PITCH, M = TUTORIAL_MID;
+  const w = TUTORIAL_ROOMS * P + 1, h = M * 2 + 1;
+  const tiles = grid(w, h, T.WALL);
+  const ground = grid(w, h, 0);
+  for (let k = 0; k < TUTORIAL_ROOMS; k++) {
+    for (let y = 1; y < h - 1; y++) for (let x = k * P + 1; x < (k + 1) * P; x++) tiles[y * w + x] = T.FLOOR;
+    if (k > 0) for (let y = M - 1; y <= M + 1; y++) tiles[y * w + k * P] = T.DOOR; // gate into room k
+  }
+  for (let y = M - 2; y <= M + 2; y++) for (let x = (TUTORIAL_ROOMS - 1) * P + 3; x < TUTORIAL_ROOMS * P - 2; x++) ground[y * w + x] = GROUND.GRASS;
+  const cx = tutorialRoomX;
+  const start = { x: 2, y: M };
+  const exit = { x: cx(TUTORIAL_ROOMS - 1) + 3, y: M };
+  tiles[exit.y * w + exit.x] = T.EXIT;
+  const items = [
+    { type: 'gold', x: 5, y: 2 }, { type: 'gold', x: 9, y: M }, { type: 'gold', x: 5, y: h - 3 }, // 0: move
+    { type: 'key', x: cx(3), y: 2 },                                                           // 3: keys
+    { type: 'potion', x: cx(4) - 3, y: M },                                                    // 4: magic
+    { type: 'food', x: cx(6) - 2, y: M - 2 }, { type: 'food', x: cx(6) + 2, y: M + 2 },        // 6: food
+    { type: 'poison', x: cx(6) + 2, y: M - 2 },
+  ];
+  const rooms = [];
+  for (let k = 0; k < TUTORIAL_ROOMS; k++) rooms.push({ cx: cx(k), cy: M, size: 110 });
+  return { n: 0, w, h, tiles, ground, rooms, start, exit, items, generators: [], enemies: [], boss: null, info, doorSegs: 0, tutorial: true };
+}
+
 // ---------- treasure room (bonus round after each guardian) ----------
 
 export function generateTreasureRoom(realm, seed = 4242 + realm * 97) {

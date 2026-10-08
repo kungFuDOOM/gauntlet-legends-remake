@@ -5,6 +5,7 @@
 import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
+import { Tutorial } from './tutorial.js';
 import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
@@ -62,6 +63,10 @@ let slots = [];       // character select: { source, cls, ready }
 let countdown = null;
 let clearInfo = null;
 let toast = null;
+let tutorial = null;  // the Training Grounds lessons, while they're being played
+let showControls = true; // the key-cap strip along the bottom (H toggles it)
+try { showControls = localStorage.getItem('gl-remake-controls') !== 'off'; } catch { /* storage unavailable */ }
+let magicHint = { t: 20, shown: 0 }; // reminders that magic exists
 
 const HISCORE_KEY = 'gl-remake-hiscores';
 function loadScores() {
@@ -227,7 +232,24 @@ function CLASSES_NAME(cls) { return cls[0].toUpperCase() + cls.slice(1); }
 function startGame() {
   game = new Game();
   slots.forEach((s, i) => { if (s) game.addPlayer(i, s.source, s.cls, save.heroes[s.cls]); });
-  openMap();
+  if (!save.progress.tutorialDone) startTutorial();
+  else openMap();
+}
+
+// ---------- the Training Grounds (first-time tutorial) ----------
+
+function startTutorial() {
+  game.startTutorial();
+  tutorial = new Tutorial(game, input.touch);
+  setState('play');
+}
+
+function finishTutorial(skipped = false) {
+  save.progress.tutorialDone = true;
+  tutorial = null;
+  persist();
+  toast = { text: skipped ? 'Training skipped' : 'Training complete! Choose a realm.', t: 2.5 };
+  openHub();
 }
 
 // ---------- the hub ----------
@@ -286,6 +308,23 @@ function updateRealmPick() {
 
 // ---------- playing ----------
 
+// When someone is swamped or nearly dead and still has a potion, remind them about magic
+// (a few times per session, so it doesn't nag).
+function updateMagicHint(dt) {
+  magicHint.t -= dt;
+  if (magicHint.t > 0 || magicHint.shown >= 4) return;
+  for (const p of game.livePlayers()) {
+    if (p.potions <= 0) continue;
+    const crowd = game.enemies.filter((e) => game.onScreen(e)).length;
+    if (crowd < 12 && p.hp > 160) continue;
+    game.text(p.x, p.y - 40, `${btn('magic', p.source).toUpperCase()}: MAGIC!`, '#c9a0ff', 2.5);
+    toast = { text: `${p.name}: press ${btn('magic', p.source)} to use magic — it hits every monster on screen!`, t: 3.5 };
+    if (input.touch) input.touch.pulse('magic');
+    magicHint = { t: 45, shown: magicHint.shown + 1 };
+    return;
+  }
+}
+
 function updatePlay(dt) {
   if (input.key('Escape') || input.key('KeyP') || input.anyStart()) { setState('paused'); return; }
 
@@ -304,6 +343,12 @@ function updatePlay(dt) {
 
   game.update(dt, input);
   if (game.level.hub) { updateHubActions(); return; }
+  if (game.level.tutorial) {
+    if (tutorial) tutorial.update(dt);
+    if (game.exitReached) finishTutorial();
+    return;
+  }
+  updateMagicHint(dt);
 
   if (game.exitReached && game.level.treasure) {
     // treasure room over: back to the hub with the loot
@@ -433,10 +478,16 @@ function render() {
     drawEnding(ctx, stateT, game, save.progress);
   } else if (game) {
     r3d.render(game);
-    drawGameOverlay(ctx, game, r3d, { minimap: showMinimap && !game.level.hub, runes: runeCount(save.progress) + game.runesFound.length });
+    drawGameOverlay(ctx, game, r3d, {
+      minimap: showMinimap && !game.level.hub && !game.level.tutorial,
+      runes: game.level.tutorial ? null : runeCount(save.progress) + game.runesFound.length,
+      tutorial: game.level.tutorial && tutorial ? tutorial.view(btn, input.lastDevice) : null,
+      controls: showControls && input.lastDevice !== 'touch' && state === 'play',
+    });
     if (state === 'paused') {
       const resume = { touch: 'Tap II to resume', pad: 'Press Start to resume', keys: 'Press P or Esc to resume' }[input.lastDevice];
-      const lines = [resume, `${btn('magic')}: save and quit to title`];
+      const lines = [resume, game.level.tutorial ? `${btn('magic')}: skip the training` : `${btn('magic')}: save and quit to title`];
+      if (game.level.hub && input.lastDevice === 'keys') lines.push('T: replay the training');
       if (input.lastDevice === 'keys') lines.push('M: mute   N: music   V: announcer   TAB: map   X: pixel size');
       drawOverlay(ctx, 'PAUSED', [...lines, `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
@@ -474,6 +525,11 @@ function frame(now) {
 
   if (input.key('KeyM')) { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; }
   if (input.key('Tab')) showMinimap = !showMinimap;
+  if (input.key('KeyH')) {
+    showControls = !showControls;
+    toast = { text: showControls ? 'Controls shown' : 'Controls hidden (H to show)', t: 1.5 };
+    try { localStorage.setItem('gl-remake-controls', showControls ? 'on' : 'off'); } catch { /* storage unavailable */ }
+  }
   if (input.key('KeyX')) {
     const level = (r3d.pixelLevel + 1) % 3;
     toast = { text: r3d.setPixelation(level), t: 1.5 };
@@ -495,7 +551,10 @@ function frame(now) {
     case 'play': updatePlay(dt); break;
     case 'paused':
       if (input.key('Escape') || input.key('KeyP') || input.anyStart()) setState('play');
-      else if (partyPressed('magic')) { persist(); game = null; setState('title'); }
+      else if (partyPressed('magic')) {
+        if (game.level.tutorial) finishTutorial(true);
+        else { persist(); game = null; setState('title'); }
+      } else if (input.key('KeyT') && game.level.hub) startTutorial();
       break;
     case 'levelclear': updateLevelClear(); break;
     case 'gameover': updateGameOver(); break;
@@ -514,7 +573,7 @@ function loop(now) {
 }
 
 // Debug/test hook (used by automated smoke tests).
-window.__gl = { get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get r3d() { return r3d; } };
+window.__gl = { get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; } };
 
 // Scale canvas to fit window while keeping aspect ratio.
 function fit() {

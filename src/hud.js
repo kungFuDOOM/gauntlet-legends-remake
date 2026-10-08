@@ -97,8 +97,10 @@ export function drawGameOverlay(ctx, g, r3d, opts) {
     ctx.font = `bold 12px ${SANS}`;
     outlined(ctx, 'TREASURE ROOM', VIEW_W / 2, 98, '#ffd860', '#000', 3);
   }
-  drawBanner(ctx, g);
+  if (opts.tutorial) drawTutorial(ctx, g, opts.tutorial);
+  else drawBanner(ctx, g);
   for (let s = 0; s < MAX_PLAYERS; s++) drawPanel(ctx, g, s);
+  if (opts.controls) drawControlsBar(ctx);
   if (opts.minimap || g.anyBuff('xray')) drawMinimap(ctx, g, g.anyBuff('xray'));
 }
 
@@ -169,6 +171,17 @@ function drawPanel(ctx, g, slot) {
   for (let i = 0; i < Math.min(p.keys, 4); i++) drawKeyIcon(ctx, ix + i * 9, iy);
   if (p.keys > 4) { ctx.font = `bold 10px ${SANS}`; ctx.textAlign = 'left'; outlined(ctx, `x${p.keys}`, ix + 36, iy + 4, '#ffd040', '#000', 2); }
   ix = x + 184;
+  // the potions' key, as a little key cap, so players know they have magic and how to use it
+  const mk = btn('magic', p.source);
+  if (mk.length <= 2) {
+    ctx.font = `bold 9px ${SANS}`;
+    ctx.textAlign = 'center';
+    roundRect(ctx, ix - 13, iy - 6, 11, 12, 2);
+    ctx.fillStyle = p.potions ? '#c8d0ff' : '#5a5a6a';
+    ctx.fill();
+    ctx.fillStyle = '#10142a';
+    ctx.fillText(mk.toUpperCase(), ix - 7.5, iy + 3.5);
+  }
   for (let i = 0; i < Math.min(p.potions, 3); i++) drawPotionIcon(ctx, ix + i * 11, iy);
   if (p.potions > 3) { ctx.font = `bold 10px ${SANS}`; ctx.textAlign = 'left'; outlined(ctx, `x${p.potions}`, ix + 32, iy + 4, '#8aa0ff', '#000', 2); }
 
@@ -244,6 +257,65 @@ function drawBossBar(ctx, g) {
   hg.addColorStop(0, '#ff7040'); hg.addColorStop(1, '#a01808');
   ctx.fillStyle = hg;
   ctx.fillRect(x, y + 8, w * Math.max(0, e.hp / e.maxHp), 9);
+}
+
+// The current lesson in the Training Grounds, in a box at the top of the screen.
+function drawTutorial(ctx, g, tut) {
+  const w = 452, x = (VIEW_W - w) / 2, y = 10;
+  ctx.font = `15px ${SANS}`;
+  const rows = wrap(ctx, tut.text, w - 28);
+  const h = 47 + rows.length * 19;
+  frame(ctx, x, y, w, h, tut.done ? '#60e060' : '#f2c14e');
+  ctx.textAlign = 'center';
+  ctx.font = `bold 12px ${SANS}`;
+  outlined(ctx, `TRAINING ${tut.n} / ${tut.of}`, VIEW_W / 2, y + 17, '#c8b88a', '#000', 2);
+  ctx.font = `bold 17px ${SERIF}`;
+  outlined(ctx, tut.done ? `${tut.title}  ✓` : tut.title, VIEW_W / 2, y + 35, tut.done ? '#80ff80' : '#ffe080', '#000', 3);
+  ctx.font = `15px ${SANS}`;
+  rows.forEach((r, i) => outlined(ctx, r, VIEW_W / 2, y + 56 + i * 19, '#f4ead0', '#000', 3));
+  if (g.banner && g.banner.t > 0) {
+    // the level-name banner still shows, lower down, when training starts
+    drawBanner(ctx, g);
+  }
+}
+
+// A strip of key caps along the bottom so the controls are always in sight.
+function drawControlsBar(ctx) {
+  const items = device === 'pad'
+    ? [['STICK', 'move'], ['A', 'attack'], ['B', 'magic'], ['X', '+ A turbo'], ['START', 'pause']]
+    : [['WASD', 'move'], ['ENTER', 'attack'], ['E', 'magic'], ['SHIFT', '+ ENTER turbo'], ['P', 'pause'], ['H', 'hide']];
+  let size = 12;
+  const measure = () => {
+    let total = 0;
+    for (const [k, label] of items) {
+      ctx.font = `bold ${size}px ${SANS}`;
+      total += ctx.measureText(k).width + 10 + 4;
+      ctx.font = `${size}px ${SANS}`;
+      total += ctx.measureText(label).width + 14;
+    }
+    return total - 14;
+  };
+  let total = measure();
+  while (total > 440 && size > 9) { size--; total = measure(); }
+  let x = (VIEW_W - total) / 2;
+  const y = VIEW_H - 14;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  roundRect(ctx, x - 10, y - size - 8, total + 20, size + 14, 6);
+  ctx.fill();
+  ctx.textAlign = 'left';
+  for (const [k, label] of items) {
+    ctx.font = `bold ${size}px ${SANS}`;
+    const kw = ctx.measureText(k).width + 10;
+    roundRect(ctx, x, y - size - 3, kw, size + 6, 3);
+    ctx.fillStyle = '#e8dcc0';
+    ctx.fill();
+    ctx.fillStyle = '#1a1208';
+    ctx.fillText(k, x + 5, y);
+    x += kw + 4;
+    ctx.font = `${size}px ${SANS}`;
+    outlined(ctx, label, x, y, '#f0e6d0', '#000', 3);
+    x += ctx.measureText(label).width + 14;
+  }
 }
 
 function drawBanner(ctx, g) {
@@ -371,6 +443,7 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
 const BUTTON_NAMES = {
   attack: { kb: 'Enter', kb1: 'Space', kb2: 'Enter', pad: 'A', touch: 'ATTACK' },
   magic: { kb: 'E', kb1: 'E', kb2: '.', pad: 'B', touch: 'MAGIC' },
+  turbo: { kb: 'Shift', kb1: 'Left Shift', kb2: 'Right Shift', pad: 'X', touch: 'TURBO' },
 };
 let device = 'keys';
 export function setDevice(d) { device = d; }

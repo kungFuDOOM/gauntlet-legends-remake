@@ -41,9 +41,11 @@ To keep the repository private instead, connect it to a free static host such as
 | **Shared keyboard, player 2** | Arrows | Enter / `/` | `.` / `'` | Right Shift / `,` |
 | **Gamepads** (up to 4) | Stick / D-pad | A / RT | B / Y | X / RB + A |
 
-`P`/`Esc`/Start pauses · `M` mutes sound · `N` toggles music · `V` turns the announcer on or off · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
+`P`/`Esc`/Start pauses · `H` shows or hides the controls bar at the bottom of the screen · `M` mutes sound · `N` toggles music · `V` turns the announcer on or off · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
 
 Up to **4 players** can play co-op on one screen. On your own, every key above (and the touch screen, if you have one) controls your hero. Gamepads join by pressing Attack, even in the middle of a level. For two players on one keyboard, press **2**: player 1 keeps WASD and player 2 gets the arrow keys.
+
+**New here?** The first time you play, your party starts in the **Training Grounds**: eight short rooms that teach moving, attacking, generators, keys and doors, magic, turbo attacks and food, naming the right buttons for your keyboard, gamepad or touch screen. You can't die there, and you can skip it from the pause menu. To replay it later, pause in the hub and press `T`.
 
 ## The quest
 

@@ -100,3 +100,19 @@ test('treasure rooms are full of loot with a reachable exit and no monsters', as
     for (const it of L.items) assert.equal(L.tiles[it.y * L.w + it.x], T.FLOOR);
   }
 });
+
+test('the training grounds are a row of gated rooms leading to a reachable exit', async () => {
+  const { generateTutorial, TUTORIAL_ROOMS, TUTORIAL_PITCH } = await import('../src/level.js');
+  const L = generateTutorial();
+  for (const it of L.items) assert.equal(L.tiles[it.y * L.w + it.x], T.FLOOR);
+  // with the gates shut only the first room is reachable, and it holds no key
+  const shut = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], walkable);
+  for (const it of L.items) assert.equal(shut[it.y * L.w + it.x] >= 0, it.x < TUTORIAL_PITCH, `${it.type} at ${it.x}`);
+  assert.ok(shut[L.exit.y * L.w + L.exit.x] < 0);
+  // every room after the first has a gate, and with them open the exit can be reached
+  const open = L.tiles.slice();
+  for (let k = 1; k < TUTORIAL_ROOMS; k++) assert.equal(open[6 * L.w + k * TUTORIAL_PITCH], T.DOOR);
+  for (let i = 0; i < open.length; i++) if (open[i] === T.DOOR) open[i] = T.FLOOR;
+  const d = bfs(open, L.w, L.h, [[L.start.x, L.start.y]], walkable);
+  assert.ok(d[L.exit.y * L.w + L.exit.x] >= 0);
+});
