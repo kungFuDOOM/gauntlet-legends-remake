@@ -349,91 +349,146 @@ function smooth(tiles, w, h, passes) {
 
 // ---------- layout: castle courtyards and halls ----------
 
+// The castle is laid out on a coarse grid: a main route of halls and courtyards snakes from
+// the start (west) to the exit (east), with a few side rooms hanging off it. Gates go only
+// where they matter: across the main route (their keys wait in the rooms before them,
+// usually a side room) and at the single entrance of a treasure vault.
 function castleLayout(n, R) {
   const ri = (a, b) => a + Math.floor(R() * (b - a + 1));
   const w = Math.min(54 + n * 4, 104), h = Math.min(40 + n * 3, 78);
   const tiles = grid(w, h, T.WALL);
   const ground = grid(w, h, 0);
+  const COLS = n >= 6 ? 5 : 4, ROWS = 3;
+  const cw = Math.floor((w - 6) / COLS), ch = Math.floor((h - 6) / ROWS);
+  const cellAt = new Map(); // "c,r" -> room index
   const rooms = [];
-  const target = Math.min(6 + n, 14);
-  for (let a = 0; a < 800 && rooms.length < target; a++) {
-    const big = R() < 0.4;
-    const rw = big ? ri(10, 15) : ri(6, 9), rh = big ? ri(8, 12) : ri(5, 8);
-    const x = ri(3, w - rw - 4), y = ri(3, h - rh - 4);
-    if (rooms.some((r) => x < r.x + r.w + 4 && x + rw + 4 > r.x && y < r.y + r.h + 4 && y + rh + 4 > r.y)) continue;
-    rooms.push({ x, y, w: rw, h: rh, cx: x + (rw >> 1), cy: y + (rh >> 1), courtyard: big });
-  }
-  rooms.sort((a, b) => a.cx - b.cx);
   const roomOf = new Int16Array(w * h).fill(-1);
-  rooms.forEach((r, id) => {
-    for (let y = r.y; y < r.y + r.h; y++)
-      for (let x = r.x; x < r.x + r.w; x++) {
-        tiles[y * w + x] = T.FLOOR;
-        roomOf[y * w + x] = id;
-        if (r.courtyard) ground[y * w + x] = GROUND.GRASS;
+
+  const addRoom = (c, r, kind) => {
+    const big = kind === 'route' && R() < 0.4;
+    const rw = big ? ri(Math.min(11, cw - 5), cw - 4) : ri(6, Math.min(10, cw - 5));
+    const rh = big ? ri(Math.min(9, ch - 5), ch - 4) : ri(5, Math.min(8, ch - 5));
+    const x0 = 3 + c * cw, y0 = 3 + r * ch;
+    const x = ri(x0 + 1, x0 + cw - rw - 1), y = ri(y0 + 1, y0 + ch - rh - 1);
+    const room = { x, y, w: rw, h: rh, cx: x + (rw >> 1), cy: y + (rh >> 1), courtyard: big, c, r, kind, id: rooms.length };
+    rooms.push(room);
+    cellAt.set(`${c},${r}`, room.id);
+    for (let yy = y; yy < y + rh; yy++)
+      for (let xx = x; xx < x + rw; xx++) {
+        tiles[yy * w + xx] = T.FLOOR;
+        roomOf[yy * w + xx] = room.id;
+        if (big) ground[yy * w + xx] = GROUND.GRASS;
       }
-  });
-  // courtyards get a ring of pillars standing in the grass
-  for (const r of rooms) {
-    if (!r.courtyard) continue;
-    for (const [px, py] of [[r.x + 2, r.y + 2], [r.x + r.w - 3, r.y + 2], [r.x + 2, r.y + r.h - 3], [r.x + r.w - 3, r.y + r.h - 3]]) tiles[py * w + px] = T.WALL;
-  }
-  const carve3 = (x, y) => {
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const cx = x + dx, cy = y + dy;
-      if (cx > 1 && cy > 1 && cx < w - 2 && cy < h - 2 && tiles[cy * w + cx] === T.WALL && roomOf[cy * w + cx] < 0) tiles[cy * w + cx] = T.FLOOR;
-    }
+    if (big) for (const [px, py] of [[x + 2, y + 2], [x + rw - 3, y + 2], [x + 2, y + rh - 3], [x + rw - 3, y + rh - 3]]) tiles[py * w + px] = T.WALL;
+    return room;
   };
+
+  // the main route: west to east, wandering up and down a little in each column
+  const route = [];
+  let r = ri(0, ROWS - 1);
+  for (let c = 0; c < COLS; c++) {
+    route.push(addRoom(c, r, 'route'));
+    if (c === COLS - 1) break;
+    if (R() < 0.6) {
+      const dir = r === 0 ? 1 : r === ROWS - 1 ? -1 : R() < 0.5 ? -1 : 1;
+      const steps = R() < 0.3 ? 2 : 1;
+      for (let k = 0; k < steps; k++) {
+        const rr = r + dir;
+        if (rr < 0 || rr >= ROWS || cellAt.has(`${c},${rr}`)) break;
+        r = rr;
+        route.push(addRoom(c, r, 'route'));
+      }
+    }
+  }
+
+  // corridors: 3 wide, L-shaped, never cutting through other rooms' floors
   const hall = (a, b) => {
-    let x = a.cx, y = a.cy;
-    const horizFirst = R() < 0.5;
-    const stepX = () => { while (x !== b.cx) { x += Math.sign(b.cx - x); carve3(x, y); } };
-    const stepY = () => { while (y !== b.cy) { y += Math.sign(b.cy - y); carve3(x, y); } };
-    if (horizFirst) { stepX(); stepY(); } else { stepY(); stepX(); }
-  };
-  const connected = [0];
-  const pending = new Set(rooms.map((_, i) => i).slice(1));
-  while (pending.size) {
-    let best = null, bd = Infinity;
-    for (const i of pending) for (const j of connected) {
-      const d = Math.abs(rooms[i].cx - rooms[j].cx) + Math.abs(rooms[i].cy - rooms[j].cy);
-      if (d < bd) { bd = d; best = [i, j]; }
-    }
-    hall(rooms[best[1]], rooms[best[0]]);
-    connected.push(best[0]);
-    pending.delete(best[0]);
-  }
-  for (let k = 0; k < Math.floor(rooms.length / 4); k++) {
-    const a = ri(0, rooms.length - 1), b = ri(0, rooms.length - 1);
-    if (a !== b) hall(rooms[a], rooms[b]);
-  }
-  // gates where halls enter rooms
-  const pDoor = Math.min(0.3 + n * 0.04, 0.6);
-  const seen = new Uint8Array(w * h);
-  const isCand = (i) => {
-    if (tiles[i] !== T.FLOOR || roomOf[i] !== -1) return false;
-    const x = i % w, y = (i / w) | 0;
-    return DIRS4.some(([dx, dy]) => roomOf[(y + dy) * w + x + dx] >= 0);
-  };
-  for (let i = 0; i < w * h; i++) {
-    if (seen[i] || !isCand(i)) continue;
-    const seg = [];
-    const stack = [i];
-    seen[i] = 1;
-    while (stack.length) {
-      const c = stack.pop();
-      seg.push(c);
-      const x = c % w, y = (c / w) | 0;
-      for (const [dx, dy] of DIRS4) { const j = (y + dy) * w + x + dx; if (!seen[j] && isCand(j)) { seen[j] = 1; stack.push(j); } }
-    }
-    if (seg.length >= 2 && seg.length <= 3 && R() < pDoor && !seg.some((c) => roomOf[c - 1] === 0 || roomOf[c + 1] === 0 || roomOf[c - w] === 0 || roomOf[c + w] === 0)) seg.forEach((c) => (tiles[c] = T.DOOR));
-  }
-  const areas = rooms.map((r, id) => {
     const cells = [];
-    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) cells.push(y * w + x);
-    return { cx: r.cx, cy: r.cy, cells, id };
+    let x = a.cx, y = a.cy;
+    const carve = () => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const cx = x + dx, cy = y + dy, i = cy * w + cx;
+        if (cx > 1 && cy > 1 && cx < w - 2 && cy < h - 2 && roomOf[i] < 0) { tiles[i] = T.FLOOR; cells.push(i); }
+      }
+    };
+    const horizFirst = a.r === b.r ? true : a.c === b.c ? false : R() < 0.5;
+    const stepX = () => { while (x !== b.cx) { x += Math.sign(b.cx - x); carve(); } };
+    const stepY = () => { while (y !== b.cy) { y += Math.sign(b.cy - y); carve(); } };
+    if (horizFirst) { stepX(); stepY(); } else { stepY(); stepX(); }
+    return cells;
+  };
+  const halls = [];
+  for (let i = 1; i < route.length; i++) halls.push({ a: route[i - 1], b: route[i], cells: hall(route[i - 1], route[i]), idx: i });
+
+  // side rooms in free neighbouring cells
+  const sides = [];
+  const want = Math.min(2 + Math.floor((n - 4) / 2), 4);
+  const order = route.slice(0, -1).map((_, i) => i).sort(() => R() - 0.5);
+  for (const i of order) {
+    if (sides.length >= want) break;
+    const p = route[i];
+    const free = DIRS4.map(([dx, dy]) => [p.c + dx, p.r + dy]).filter(([c, rr]) => c >= 0 && rr >= 0 && c < COLS && rr < ROWS && !cellAt.has(`${c},${rr}`));
+    if (!free.length) continue;
+    const [c, rr] = free[Math.floor(R() * free.length)];
+    const s = addRoom(c, rr, 'side');
+    s.parent = i;
+    sides.push({ room: s, cells: hall(p, s) });
+  }
+
+  // gates across the main route, spread out, never on the first corridor
+  const gateCount = Math.min(1 + Math.floor((n - 1) / 3), 3, halls.length - 1);
+  const gateHalls = [];
+  for (let g = 1; g <= gateCount; g++) gateHalls.push(halls[Math.min(halls.length - 1, Math.round((g * halls.length) / (gateCount + 1)))]);
+  const gateOn = (cells, into) => {
+    // the strip of corridor tiles touching the room the corridor leads into
+    const strip = [...new Set(cells)].filter((i) => tiles[i] === T.FLOOR && DIRS4.some(([dx, dy]) => roomOf[i + dy * w + dx] === into.id));
+    if (strip.length < 2 || strip.length > 4) return null;
+    strip.forEach((i) => (tiles[i] = T.DOOR));
+    return strip;
+  };
+  const gates = [];
+  for (const hl of [...new Set(gateHalls)]) { const g = gateOn(hl.cells, hl.b); if (g) gates.push({ strip: g, before: hl.idx - 1 }); }
+  // one or two side rooms become locked treasure vaults (never the ones holding keys)
+  const vaultIds = new Set();
+  const lastGateBefore = gates.length ? Math.max(...gates.map((g) => g.before)) : -1;
+  for (const sd of sides.slice().sort(() => R() - 0.5)) {
+    if (vaultIds.size >= (n >= 7 ? 2 : 1)) break;
+    if (sd.room.parent <= lastGateBefore && sides.filter((o) => o.room.parent <= lastGateBefore && !vaultIds.has(o.room.id)).length <= 1) continue; // keep a key room
+    if (gateOn(sd.cells, sd.room)) vaultIds.add(sd.room.id);
+  }
+
+  // a shortcut between route rooms that sit side by side, as long as it skips no gate
+  for (let i = 0; i < route.length; i++)
+    for (let j = i + 2; j < route.length; j++) {
+      if (Math.abs(route[i].c - route[j].c) + Math.abs(route[i].r - route[j].r) !== 1) continue;
+      if (gates.some((g) => g.before >= i && g.before < j)) continue;
+      if (R() < 0.6) hall(route[i], route[j]);
+    }
+
+  // a gate that can be walked around is no gate at all: open it up
+  const start = { x: route[0].cx, y: route[0].cy };
+  {
+    const seen = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      if (tiles[i] !== T.DOOR || seen[i]) continue;
+      const seg = [], stack = [i];
+      seen[i] = 1;
+      while (stack.length) { const c = stack.pop(); seg.push(c); for (const j of [c + 1, c - 1, c + w, c - w]) if (tiles[j] === T.DOOR && !seen[j]) { seen[j] = 1; stack.push(j); } }
+      // floor on both sides of the gate must be disconnected while every gate is shut
+      const shut = bfs(tiles, w, h, [[start.x, start.y]], walkable);
+      const sidesReach = seg.flatMap((c) => [c + 1, c - 1, c + w, c - w]).filter((j) => walkable(tiles[j]));
+      const reached = sidesReach.filter((j) => shut[j] >= 0).length;
+      if (reached === sidesReach.length) seg.forEach((c) => (tiles[c] = T.FLOOR)); // both sides reachable: pointless
+    }
+  }
+
+  const keyRooms = new Set(sides.filter((sd) => !vaultIds.has(sd.room.id)).map((sd) => sd.room.id));
+  const areas = rooms.map((rm) => {
+    const cells = [];
+    for (let y = rm.y; y < rm.y + rm.h; y++) for (let x = rm.x; x < rm.x + rm.w; x++) cells.push(y * w + x);
+    return { cx: rm.cx, cy: rm.cy, cells, id: rm.id, vault: vaultIds.has(rm.id), side: rm.kind === 'side', keyRoom: keyRooms.has(rm.id), exitHere: rm === route[route.length - 1] };
   });
-  return { w, h, tiles, areas, start: { x: rooms[0].cx, y: rooms[0].cy }, ground };
+  return { w, h, tiles, areas, start, ground };
 }
 
 // ---------- layout: sky islands ----------
@@ -603,12 +658,14 @@ function populate(n, R, info, map) {
   const fullDist = bfs(tiles, w, h, [[start.x, start.y]], walkableOrDoor);
   let exitArea = -1, far = -1;
   areas.forEach((a, i) => {
-    if (i === startArea || a.vault) return;
+    if (i === startArea || a.vault || a.side) return;
     const c = a.cells.reduce((best, cell) => (Math.abs((cell % w) - a.cx) + Math.abs(((cell / w) | 0) - a.cy) < Math.abs((best % w) - a.cx) + Math.abs(((best / w) | 0) - a.cy) ? cell : best), a.cells[0]);
     a.center = c;
     const d = fullDist[c];
     if (d > far) { far = d; exitArea = i; }
   });
+  const marked = areas.findIndex((a) => a.exitHere);
+  if (marked > 0) exitArea = marked;
   if (exitArea < 0) exitArea = 0;
   const exitCell = areas[exitArea].center ?? areas[exitArea].cells[0];
   const exit = { x: exitCell % w, y: (exitCell / w) | 0 };
@@ -630,8 +687,17 @@ function populate(n, R, info, map) {
     compCells.push(cells);
   }
   const inArea = new Set(areas.flatMap((a) => a.cells));
+  // side rooms marked as key rooms get the keys first (one each), so there's a reason to explore
+  const keyRoomCells = areas.filter((a) => a.keyRoom).map((a) => new Set(a.cells));
+  const usedKeyRooms = new Set();
   const placeKeyInComp = (id) => {
     const cells = compCells[id].filter((c) => tiles[c] === T.FLOOR);
+    const kr = keyRoomCells.find((set) => !usedKeyRooms.has(set) && cells.some((c) => set.has(c)));
+    if (kr) {
+      usedKeyRooms.add(kr);
+      const c = freeCellIn(cells.filter((x) => kr.has(x)));
+      if (c != null) { addItem('key', c); return; }
+    }
     const preferred = cells.filter((c) => inArea.has(c));
     let c = freeCellIn(preferred.length ? preferred : cells);
     if (c == null) c = freeCellIn(cells);

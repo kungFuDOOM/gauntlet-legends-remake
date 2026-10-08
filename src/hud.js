@@ -87,7 +87,7 @@ export function drawGameOverlay(ctx, g, r3d, opts) {
   }
 
   drawBossBar(ctx, g);
-  if (g.level.hub) drawHubLabels(ctx, g, r3d);
+  if (g.level.hub) drawHubLabels(ctx, g, r3d, opts.hubPrompt !== false);
   if (!g.boss && !g.level.hub && opts.runes != null) drawRuneCount(ctx, opts.runes);
   if (g.treasureT > 0) {
     ctx.textAlign = 'center';
@@ -722,7 +722,7 @@ export function drawRealmPick(ctx, time, progress, pick) {
 }
 
 // Labels over the hub's portals and merchant, and a prompt when someone stands at one.
-function drawHubLabels(ctx, g, r3d) {
+function drawHubLabels(ctx, g, r3d, prompt = true) {
   ctx.textAlign = 'center';
   for (const pt of g.level.portals) {
     const p = r3d.toScreen((pt.x + 0.5) * TILE, (pt.y + 0.5) * TILE + 30, 0);
@@ -735,7 +735,7 @@ function drawHubLabels(ctx, g, r3d) {
   const sp = r3d.toScreen((g.level.shop.x + 0.5) * TILE, (g.level.shop.y + 0.5) * TILE, 80);
   ctx.font = `italic bold 15px ${SERIF}`;
   outlined(ctx, 'Merchant', sp.x, sp.y, '#ffd860', '#000', 4);
-  if (g.hubFocus) {
+  if (g.hubFocus && prompt) {
     const text = g.hubFocus.type === 'shop' ? `Press ${btn('attack')} to trade` : (g.hubFocus.realm === 3 && g.underworldSealed ? 'The way is sealed' : `Press ${btn('attack')} to enter`);
     ctx.font = `bold 18px ${SANS}`;
     outlined(ctx, text, VIEW_W / 2, VIEW_H - 120, Math.floor(g.time * 3) % 2 ? '#ffffff' : '#ffe080', '#000', 4);

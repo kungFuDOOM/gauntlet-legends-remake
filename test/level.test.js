@@ -116,3 +116,24 @@ test('the training grounds are a row of gated rooms leading to a reachable exit'
   const d = bfs(open, L.w, L.h, [[L.start.x, L.start.y]], walkable);
   assert.ok(d[L.exit.y * L.w + L.exit.x] >= 0);
 });
+
+test('castle gates all guard something: none can be walked around, and there are only a few', () => {
+  for (const n of [5, 6, 7]) for (let seed = 1; seed <= 40; seed++) {
+    const L = generateLevel(n, seed * 104729 + n);
+    const { w, h, tiles } = L;
+    const seen = new Uint8Array(w * h);
+    let gates = 0;
+    const shut = bfs(tiles, w, h, [[L.start.x, L.start.y]], walkable);
+    for (let i = 0; i < w * h; i++) {
+      if (tiles[i] !== T.DOOR || seen[i]) continue;
+      const seg = [], st = [i];
+      seen[i] = 1;
+      while (st.length) { const c = st.pop(); seg.push(c); for (const j of [c + 1, c - 1, c + w, c - w]) if (tiles[j] === T.DOOR && !seen[j]) { seen[j] = 1; st.push(j); } }
+      gates++;
+      const sides = seg.flatMap((c) => [c + 1, c - 1, c + w, c - w]).filter((j) => walkable(tiles[j]));
+      assert.ok(sides.some((j) => shut[j] < 0), `level ${n} seed ${seed}: a gate can be walked around`);
+    }
+    assert.ok(gates >= 1 && gates <= 5, `level ${n} seed ${seed}: ${gates} gates`);
+    assert.equal(L.items.filter((it) => it.type === 'key').length, gates + 1);
+  }
+});

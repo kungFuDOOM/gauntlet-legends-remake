@@ -482,7 +482,7 @@ function render() {
     drawShop(ctx, stateT, game, shop);
   } else if (state === 'realm') {
     r3d.render(game);
-    drawGameOverlay(ctx, game, r3d, { runes: runeCount(save.progress) });
+    drawGameOverlay(ctx, game, r3d, { runes: runeCount(save.progress), hubPrompt: false });
     drawRealmPick(ctx, stateT, save.progress, realmPick);
   } else if (state === 'ending') {
     r3d.renderShowcase(partyShowcase(game, stateT, true, true), stateT);
