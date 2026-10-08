@@ -21,7 +21,7 @@ load time.
 
 The announcer lines in `assets/voice/` were generated for this project with the
 [Kokoro](https://github.com/hexgrad/kokoro) text-to-speech model (Apache-2.0, voice
-"am_fenrir") through [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx), then given an
+"am_michael") through [kokoro-onnx](https://github.com/thewh1teagle/kokoro-onnx), then given an
 arcade-announcer treatment with ffmpeg. Regenerate them with `tools/voice-lines.mjs` and
 `tools/build-voice.py` (instructions at the top of that file) after changing any line.
 

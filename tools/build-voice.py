@@ -8,7 +8,7 @@ missing. Needs `pip install kokoro-onnx soundfile`, ffmpeg, and the model files 
 https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.0
 
   node tools/voice-lines.mjs > /tmp/lines.json
-  python3 tools/build-voice.py /tmp/lines.json --model DIR [--voice am_fenrir]
+  python3 tools/build-voice.py /tmp/lines.json --model DIR [--voice am_michael]
 """
 import argparse, hashlib, json, os, subprocess, sys, tempfile
 
@@ -28,7 +28,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('lines')
     ap.add_argument('--model', required=True, help='folder with kokoro-v1.0.onnx and voices-v1.0.bin')
-    ap.add_argument('--voice', default='am_fenrir')
+    ap.add_argument('--voice', default='am_michael')
     ap.add_argument('--speed', type=float, default=0.92)
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'assets', 'voice'))
     a = ap.parse_args()
