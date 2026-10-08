@@ -100,7 +100,7 @@ export function drawGameOverlay(ctx, g, r3d, opts) {
   if (opts.tutorial) drawTutorial(ctx, g, opts.tutorial);
   else drawBanner(ctx, g);
   for (let s = 0; s < MAX_PLAYERS; s++) drawPanel(ctx, g, s);
-  if (opts.controls) drawControlsBar(ctx);
+  if (opts.controls) drawControlsBar(ctx, g.players[2] || g.players[3] ? 440 : 680);
   if (opts.minimap || g.anyBuff('xray')) drawMinimap(ctx, g, g.anyBuff('xray'));
 }
 
@@ -113,14 +113,21 @@ function drawPanel(ctx, g, slot) {
   const p = g.players[slot];
   const { x, y } = panelPos(slot);
   if (!p) {
-    if (slot >= 2 && !g.players[slot - 2] && !g.players[slot === 2 ? 1 : 0]) return;
+    // One small "join" note in the first free corner, shown in the hub and for the first
+    // few seconds of a level, then it fades so the corners stay clear.
+    if ([0, 1, 2, 3].find((i) => !g.players[i]) !== slot) return;
+    const a = g.level.hub ? 0.75 : Math.min(0.75, Math.max(0, (8 - g.time) / 2));
+    if (a <= 0) return;
     if (slot >= 2 && document.body.classList.contains('touching')) return; // under the touch controls
-    ctx.globalAlpha = 0.55 + Math.sin(g.time * 4) * 0.25;
-    frame(ctx, x, y + PANEL_H - 30, PANEL_W, 30, '#888');
-    ctx.font = `bold 12px ${SANS}`;
+    ctx.globalAlpha = a;
+    const jy = slot >= 2 ? VIEW_H - M - 24 : M;
+    ctx.fillStyle = 'rgba(10,8,6,0.6)';
+    roundRect(ctx, x, jy, PANEL_W, 24, 6);
+    ctx.fill();
+    ctx.font = `bold 11px ${SANS}`;
     ctx.textAlign = 'center';
     const how = document.body.classList.contains('touching') ? 'GAMEPAD A TO JOIN' : 'GAMEPAD A OR KEY 2 TO JOIN';
-    outlined(ctx, `P${slot + 1}: ${how}`, x + PANEL_W / 2, y + PANEL_H - 11, '#e8d8a8', '#000', 3);
+    outlined(ctx, `P${slot + 1}: ${how}`, x + PANEL_W / 2, jy + 16, '#e8d8a8', '#000', 3);
     ctx.globalAlpha = 1;
     return;
   }
@@ -280,11 +287,11 @@ function drawTutorial(ctx, g, tut) {
 }
 
 // A strip of key caps along the bottom so the controls are always in sight.
-function drawControlsBar(ctx) {
+function drawControlsBar(ctx, maxW) {
   const items = device === 'pad'
     ? [['STICK', 'move'], ['A', 'attack'], ['B', 'magic'], ['X', '+ A turbo'], ['START', 'pause']]
     : [['WASD', 'move'], ['ENTER', 'attack'], ['E', 'magic'], ['SHIFT', '+ ENTER turbo'], ['P', 'pause'], ['H', 'hide']];
-  let size = 12;
+  let size = 14;
   const measure = () => {
     let total = 0;
     for (const [k, label] of items) {
@@ -296,7 +303,7 @@ function drawControlsBar(ctx) {
     return total - 14;
   };
   let total = measure();
-  while (total > 440 && size > 9) { size--; total = measure(); }
+  while (total > maxW && size > 9) { size--; total = measure(); }
   let x = (VIEW_W - total) / 2;
   const y = VIEW_H - 14;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
