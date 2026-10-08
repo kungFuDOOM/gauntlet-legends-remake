@@ -30,6 +30,9 @@ export class Input {
     this.prevRaw = {};
     this.state = {};
     this.split = false; // two players sharing the keyboard
+    // the kind of device last used ('keys', 'pad' or 'touch'), so prompts can name its buttons
+    this.lastDevice = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches ? 'touch' : 'keys';
+    window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') this.lastDevice = 'touch'; }, true);
     window.addEventListener('keydown', (e) => {
       if (PREVENT.has(e.code)) e.preventDefault();
       if (!this.keys.has(e.code)) this.globalPressed.add(e.code);
@@ -66,10 +69,12 @@ export class Input {
         attack: b(0) || b(7), magic: b(1) || b(3), turbo: b(2) || b(5) || b(6), ax, ay,
         start: b(9),
       };
+      if (ax || ay || pad.buttons.some((x) => x.pressed)) this.lastDevice = 'pad';
     }
 
     // fold the touch controls (and, unless split, the second keyboard half) into one source
     const touch = this.touch && this.touch.active ? this.touch.raw() : null;
+    if (this.globalPressed.size) this.lastDevice = 'keys';
     const merged = [raw.kb1, touch, this.split ? null : raw.kb2].filter(Boolean);
     const kb = {};
     for (const k of [...BUTTONS, 'start']) kb[k] = merged.some((r) => r[k]);

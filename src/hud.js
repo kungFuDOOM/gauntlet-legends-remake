@@ -117,7 +117,7 @@ function drawPanel(ctx, g, slot) {
     frame(ctx, x, y + PANEL_H - 30, PANEL_W, 30, '#888');
     ctx.font = `bold 12px ${SANS}`;
     ctx.textAlign = 'center';
-    const how = document.body.classList.contains('touching') ? 'GAMEPAD ATTACK TO JOIN' : 'GAMEPAD OR KEY 2 TO JOIN';
+    const how = document.body.classList.contains('touching') ? 'GAMEPAD A TO JOIN' : 'GAMEPAD A OR KEY 2 TO JOIN';
     outlined(ctx, `P${slot + 1}: ${how}`, x + PANEL_W / 2, y + PANEL_H - 11, '#e8d8a8', '#000', 3);
     ctx.globalAlpha = 1;
     return;
@@ -144,7 +144,7 @@ function drawPanel(ctx, g, slot) {
   if (!p.alive) {
     ctx.font = `bold 13px ${SANS}`;
     const blink = Math.floor(g.time * 2) % 2;
-    outlined(ctx, p.deadT > 1.5 ? 'PRESS ATTACK' : 'DEFEATED', x + 56, y + 44, blink ? '#ff6050' : '#a03020', '#000', 3);
+    outlined(ctx, p.deadT > 1.5 ? `PRESS ${BTN('attack', p.source)}` : 'DEFEATED', x + 56, y + 44, blink ? '#ff6050' : '#a03020', '#000', 3);
     if (p.deadT > 1.5) outlined(ctx, 'TO CONTINUE', x + 56, y + 60, blink ? '#ff6050' : '#a03020', '#000', 3);
     return;
   }
@@ -341,17 +341,20 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
 
   if (Math.floor(time * 2) % 2) {
     ctx.font = `bold 24px ${SANS}`;
-    outlined(ctx, progress ? 'PRESS ATTACK TO CONTINUE YOUR QUEST' : 'PRESS ATTACK TO START', VIEW_W / 2, 498, '#ffffff', '#000', 5);
+    const verb = device === 'touch' ? 'TAP' : 'PRESS';
+    outlined(ctx, `${verb} ${BTN('attack')} TO ${progress ? 'CONTINUE YOUR QUEST' : 'START'}`, VIEW_W / 2, 498, '#ffffff', '#000', 5);
   }
   if (progress) {
     ctx.font = `bold 13px ${SANS}`;
-    outlined(ctx, `Rune Stones: ${Object.keys(progress.runes).length} / 16   ·   Magic: begin a new quest`, VIEW_W / 2, 519, '#ffd890', '#000', 3);
+    outlined(ctx, `Rune Stones: ${Object.keys(progress.runes).length} / 16   ·   ${btn('magic')}: begin a new quest`, VIEW_W / 2, 519, '#ffd890', '#000', 3);
   }
   ctx.font = `12px ${SANS}`;
-  const lines = [
-    'P1: WASD move · SPACE attack · E magic · hold SHIFT + attack = turbo',
-    'P2: ARROWS move · ENTER attack · . magic · hold RIGHT SHIFT + attack = turbo',
-    'Gamepads: stick move · A attack · B magic · hold X/RB + A = turbo · up to 4 players',
+  const lines = device === 'touch' ? [
+    'Drag on the left side to move · ATTACK, MAGIC and TURBO buttons on the right',
+    'II pauses · ♪ turns the sound on or off · gamepads join with A',
+  ] : [
+    'Move: WASD or ARROWS · Attack: ENTER or SPACE · Magic: E · Turbo: hold SHIFT + attack',
+    'Second player on the keyboard: press 2 (ARROWS + ENTER) · Gamepads: A attack · B magic · X/RB turbo',
     'P pause · M mute · N music · V announcer · X pixel size · TAB map',
   ];
   lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 540 + i * 17, '#e0d4b8', '#000', 3));
@@ -361,6 +364,23 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
     outlined(ctx, `HIGH SCORE  ${h.score}  ${h.name.toUpperCase()}  (LEVEL ${h.level})`, VIEW_W / 2, 624, '#ffd040', '#000', 3);
   }
 }
+
+// What to call a button for a given input source ('kb', 'kb1', 'kb2', 'padN', or one of
+// the device kinds 'keys' / 'pad' / 'touch'), so prompts say "Press Enter" rather than
+// leaving people to guess which key is Attack.
+const BUTTON_NAMES = {
+  attack: { kb: 'Enter', kb1: 'Space', kb2: 'Enter', pad: 'A', touch: 'ATTACK' },
+  magic: { kb: 'E', kb1: 'E', kb2: '.', pad: 'B', touch: 'MAGIC' },
+};
+let device = 'keys';
+export function setDevice(d) { device = d; }
+export function btn(name, source = device) {
+  let src = source === 'keys' ? 'kb' : source;
+  if (src.startsWith('pad')) src = 'pad';
+  if (src === 'kb' && document.body.classList.contains('touching') && device === 'touch') src = 'touch';
+  return BUTTON_NAMES[name][src];
+}
+const BTN = (name, source) => btn(name, source).toUpperCase();
 
 const SEL_W = 220, SEL_GAP = 12, SEL_X0 = (VIEW_W - (SEL_W * 4 + SEL_GAP * 3)) / 2, SEL_Y = 110, SEL_H = 470;
 
@@ -420,7 +440,7 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
   ctx.font = `13px ${SANS}`;
   const help = document.body.classList.contains('touching')
     ? 'Tap ◀ ▶ to change hero · ATTACK: ready · MAGIC: back'
-    : 'Left/Right or click ◀ ▶: choose · Attack: ready · Magic: back';
+    : `Left/Right or click ◀ ▶: choose · ${btn('attack')}: ready · ${btn('magic')}: back`;
   outlined(ctx, help, VIEW_W / 2, 92, '#e0d4b8', '#000', 3);
 
   for (let s = 0; s < MAX_PLAYERS; s++) {
@@ -437,10 +457,10 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
     ctx.font = `bold 15px ${SANS}`;
     outlined(ctx, `PLAYER ${s + 1}`, x + SEL_W / 2, y + 24, '#f0e0b0', '#000', 3);
     if (!slot) {
-      if (Math.floor(time * 2) % 2) outlined(ctx, 'PRESS ATTACK', x + SEL_W / 2, y + 230, '#c8b890', '#000', 3);
+      if (Math.floor(time * 2) % 2) outlined(ctx, 'PRESS A', x + SEL_W / 2, y + 230, '#c8b890', '#000', 3);
+      ctx.font = `12px ${SANS}`;
+      outlined(ctx, 'on a gamepad to join,', x + SEL_W / 2, y + 256, '#a89878', '#000', 2);
       if (!document.body.classList.contains('touching')) {
-        ctx.font = `12px ${SANS}`;
-        outlined(ctx, 'on a gamepad to join,', x + SEL_W / 2, y + 256, '#a89878', '#000', 2);
         outlined(ctx, 'or press 2 to share the keyboard', x + SEL_W / 2, y + 274, '#a89878', '#000', 2);
         ctx.font = `bold 15px ${SANS}`;
       }
@@ -570,7 +590,7 @@ export function drawStory(ctx, story, time) {
     outlined(ctx, part, VIEW_W / 2, 512 + i * 28, '#f4e8c8', '#000', 4);
   });
   ctx.font = `12px ${SANS}`;
-  outlined(ctx, `${story.idx + 1} / ${story.lines.length}     Attack: continue     Magic: skip`, VIEW_W / 2, 590, '#b8a888', '#000', 3);
+  outlined(ctx, `${story.idx + 1} / ${story.lines.length}     ${btn('attack')}: continue     ${btn('magic')}: skip`, VIEW_W / 2, 590, '#b8a888', '#000', 3);
   ctx.font = `bold 34px ${SERIF}`;
   const tg = ctx.createLinearGradient(0, 40, 0, 80);
   tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
@@ -617,7 +637,7 @@ export function drawRealmPick(ctx, time, progress, pick) {
   }
   ctx.textAlign = 'center';
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, 'Up/Down: choose     Attack: enter     Magic: back', VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
+  outlined(ctx, `Up/Down: choose     ${btn('attack')}: enter     ${btn('magic')}: back`, VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
 }
 
 // Labels over the hub's portals and merchant, and a prompt when someone stands at one.
@@ -635,7 +655,7 @@ function drawHubLabels(ctx, g, r3d) {
   ctx.font = `italic bold 15px ${SERIF}`;
   outlined(ctx, 'Merchant', sp.x, sp.y, '#ffd860', '#000', 4);
   if (g.hubFocus) {
-    const text = g.hubFocus.type === 'shop' ? 'Press Attack to trade' : (g.hubFocus.realm === 3 && g.underworldSealed ? 'The way is sealed' : 'Press Attack to enter');
+    const text = g.hubFocus.type === 'shop' ? `Press ${btn('attack')} to trade` : (g.hubFocus.realm === 3 && g.underworldSealed ? 'The way is sealed' : `Press ${btn('attack')} to enter`);
     ctx.font = `bold 18px ${SANS}`;
     outlined(ctx, text, VIEW_W / 2, VIEW_H - 120, Math.floor(g.time * 3) % 2 ? '#ffffff' : '#ffe080', '#000', 4);
   }
@@ -653,7 +673,7 @@ export function drawShop(ctx, time, g, cursors) {
   tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
   outlined(ctx, "THE MERCHANT'S STALL", VIEW_W / 2, 56, tg, '#1a0a00', 6);
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, 'Up/Down: browse   Attack: buy   Magic: done   (everyone must finish)', VIEW_W / 2, 80, '#e0d4b8', '#000', 3);
+  outlined(ctx, `Up/Down: browse   ${btn('attack')}: buy   ${btn('magic')}: done   (everyone must finish)`, VIEW_W / 2, 80, '#e0d4b8', '#000', 3);
   const ps = g.allPlayers();
   const n = ps.length;
   const x0 = (VIEW_W - (SHOP_W * n + SHOP_GAP * (n - 1))) / 2;
@@ -727,6 +747,6 @@ export function drawEnding(ctx, time, g, progress) {
   }
   if (time > 3 && Math.floor(time * 2) % 2) {
     ctx.font = `bold 18px ${SANS}`;
-    outlined(ctx, 'Press Attack', VIEW_W / 2, 600, '#fff', '#000', 4);
+    outlined(ctx, `Press ${btn('attack')}`, VIEW_W / 2, 600, '#fff', '#000', 4);
   }
 }

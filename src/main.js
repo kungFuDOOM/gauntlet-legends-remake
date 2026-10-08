@@ -9,7 +9,7 @@ import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
@@ -143,8 +143,13 @@ function updateStory(dt) {
 
 // ---------- title ----------
 
+// On the title screen almost any key starts (people try A, Enter, Space...), except the
+// ones that do something else there.
+const TITLE_IGNORE = /^(Key[EGMNVXP]|Period|NumpadDecimal|Quote|Tab|Escape|F\d+|Meta|Alt|Control|OS|ContextMenu|CapsLock)/;
+
 function updateTitle() {
-  const atk = input.firstPressed('attack') || (input.anyStart() && input.sources().find((id) => input.get(id).pressed.start));
+  const anyKey = input.frameGlobal && [...input.frameGlobal].some((k) => !TITLE_IGNORE.test(k));
+  const atk = input.firstPressed('attack') || (input.anyStart() && input.sources().find((id) => input.get(id).pressed.start)) || (anyKey && 'kb');
   if (input.firstPressed('magic') && hasProgress(save)) { initAudio(); setState('confirm'); return; }
   if (atk) {
     initAudio();
@@ -409,7 +414,7 @@ function render() {
   } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
     drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null);
-    if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', 'Attack: start over        Magic: keep my quest'], '#ffb060');
+    if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('magic')}: keep my quest`], '#ffb060');
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
     drawStory(ctx, story, stateT);
@@ -430,7 +435,10 @@ function render() {
     r3d.render(game);
     drawGameOverlay(ctx, game, r3d, { minimap: showMinimap && !game.level.hub, runes: runeCount(save.progress) + game.runesFound.length });
     if (state === 'paused') {
-      drawOverlay(ctx, 'PAUSED', ['Press P / ESC / Start to resume', 'Magic: save and quit to title', 'M: mute   N: music   V: announcer   TAB: map   X: pixel size', `${game.info.stageName} — ${game.theme.name}`]);
+      const resume = { touch: 'Tap II to resume', pad: 'Press Start to resume', keys: 'Press P or Esc to resume' }[input.lastDevice];
+      const lines = [resume, `${btn('magic')}: save and quit to title`];
+      if (input.lastDevice === 'keys') lines.push('M: mute   N: music   V: announcer   TAB: map   X: pixel size');
+      drawOverlay(ctx, 'PAUSED', [...lines, `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
       const lines = clearInfo.wasBoss
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, '']
@@ -438,11 +446,11 @@ function render() {
       for (const p of game.allPlayers()) lines.push(`${p.name}: level ${p.lvl} · ${p.gold} gold`);
       lines.push('', `Rune Stones: ${runeCount(save.progress)} / ${TOTAL_RUNES}`);
       for (const c of clearInfo.unlocked || []) lines.push(`SECRET HERO UNLOCKED: ${c.toUpperCase()}!`);
-      if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? 'Press Attack to enter the Treasure Room!' : 'Press Attack to return to the hub');
+      if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? `Press ${btn('attack')} to enter the Treasure Room!` : `Press ${btn('attack')} to return to the hub`);
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
       const lines = game.allPlayers().map((p) => `${p.name}: level ${p.lvl} · ${p.score} pts`);
-      lines.push('', 'Attack: continue (restart this level)', 'Magic: retreat to the realm map');
+      lines.push('', `${btn('attack')}: continue (restart this level)`, `${btn('magic')}: retreat to the hub`);
       drawOverlay(ctx, 'GAME OVER', lines, '#ff6050');
     }
   }
@@ -462,6 +470,7 @@ function frame(now) {
   last = now;
   stateT += dt;
   input.poll();
+  setDevice(input.lastDevice);
 
   if (input.key('KeyM')) { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; }
   if (input.key('Tab')) showMinimap = !showMinimap;
