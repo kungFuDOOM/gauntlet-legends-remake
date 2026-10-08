@@ -136,7 +136,7 @@ function updateStory(dt) {
   const line = story.lines[story.idx];
   const shown = Math.floor(story.t * 45);
   const any = (b) => input.firstPressed(b) || (b === 'attack' && input.anyStart());
-  if (any('magic')) { if (window.speechSynthesis) window.speechSynthesis.cancel(); story.next(); return; }
+  if (anyBack()) { if (window.speechSynthesis) window.speechSynthesis.cancel(); story.next(); return; }
   if (any('attack')) {
     if (shown < line.length) { story.t = line.length / 45 + 0.01; return; }
     story.idx++;
@@ -168,7 +168,7 @@ function updateTitle() {
 
 function updateConfirm() {
   if (input.firstPressed('attack')) { save = newSave(); writeSave(save); toast = { text: 'A new quest begins', t: 2 }; setState('title'); }
-  else if (input.firstPressed('magic')) setState('title');
+  else if (anyBack()) setState('title');
 }
 
 // ---------- hero select ----------
@@ -210,12 +210,12 @@ function updateSelect(dt) {
       const dir = (inp.pressed.right || inp.pressed.down ? 1 : 0) - (inp.pressed.left || inp.pressed.up ? 1 : 0);
       if (dir) cycleClass(s, dir);
       if (inp.pressed.attack) { s.ready = true; sfx.join(); say(CLASSES_NAME(s.cls), `pick${i}`, 500); }
-      if (inp.pressed.magic) {
+      if (backPressed(s.source)) {
         slots[i] = null; countdown = null;
         unsplitKeyboard(slots);
         if (!slots.some(Boolean)) setState('title');
       }
-    } else if (inp.pressed.magic) {
+    } else if (backPressed(s.source)) {
       s.ready = false; countdown = null;
     }
   }
@@ -264,6 +264,17 @@ function openHub(fromRealm = null) {
 }
 const openMap = () => openHub();
 
+// "Back" in menus: Esc on the keyboard ('.' for a second keyboard player), B on a gamepad,
+// MAGIC on the touch screen. (E is the magic key in play, which made a poor exit key.)
+const isKb = (src) => src === 'kb' || src === 'kb1' || src === 'kb2';
+function backPressed(src) {
+  if (!isKb(src)) return !!input.get(src).pressed.magic;
+  if (src === 'kb2') return input.key('Period') || input.key('NumpadDecimal');
+  return input.key('Escape') || input.key('Backspace') || (input.lastDevice === 'touch' && !!input.get(src).pressed.magic);
+}
+const anyBack = () => input.sources().some(backPressed);
+const partyBack = () => partySources().some(backPressed);
+
 function partySources() { return game ? game.allPlayers().map((p) => p.source) : []; }
 function partyPressed(btn) { return partySources().some((src) => input.get(src).pressed[btn]); }
 
@@ -289,7 +300,7 @@ function updateHubActions() {
 function updateRealmPick() {
   if (partyPressed('up')) { realmPick.stage = Math.max(1, realmPick.stage - 1); sfx.select(); }
   if (partyPressed('down')) { realmPick.stage = Math.min(4, realmPick.stage + 1); sfx.select(); }
-  if (partyPressed('magic')) { setState('play'); return; }
+  if (partyBack()) { setState('play'); return; }
   if (partyPressed('attack')) {
     const { realm, stage } = realmPick;
     if (!isUnlocked(save.progress, realm, stage)) { sfx.hurt(); toast = { text: 'Clear the previous stage first', t: 1.8 }; return; }
@@ -413,8 +424,8 @@ function updateShop() {
         else if (buy(p, item)) { sfx.gold(); c.flash = 0.4; }
         else { sfx.hurt(); c.deny = 0.4; }
       }
-      if (inp.pressed.magic) { c.done = true; sfx.join(); }
-    } else if (inp.pressed.magic) c.done = false;
+      if (backPressed(p.source)) { c.done = true; sfx.join(); }
+    } else if (backPressed(p.source)) c.done = false;
     allDone = allDone && c.done;
   }
   if (allDone && stateT > 0.5) { persist(); setState('play'); }
@@ -429,7 +440,7 @@ function updateGameOver() {
     }
     game.startLevel(game.levelNum);
     setState('play');
-  } else if (input.firstPressed('magic')) {
+  } else if (anyBack()) {
     for (const p of game.allPlayers()) { p.alive = true; p.hp = p.def.hp; p.keys = 0; }
     openHub(game.levelNum ? realmOf(game.levelNum) : null);
   }
@@ -459,7 +470,7 @@ function render() {
   } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
     drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null);
-    if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('magic')}: keep my quest`], '#ffb060');
+    if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
     drawStory(ctx, story, stateT);
@@ -485,8 +496,9 @@ function render() {
       controls: showControls && input.lastDevice !== 'touch' && state === 'play',
     });
     if (state === 'paused') {
-      const resume = { touch: 'Tap II to resume', pad: 'Press Start to resume', keys: 'Press P or Esc to resume' }[input.lastDevice];
-      const lines = [resume, game.level.tutorial ? `${btn('magic')}: skip the training` : `${btn('magic')}: save and quit to title`];
+      const resume = { touch: 'Tap II to resume', pad: 'Press Start to resume', keys: 'Press Esc to resume' }[input.lastDevice];
+      const quit = input.lastDevice === 'keys' ? 'Q' : btn('magic');
+      const lines = [resume, game.level.tutorial ? `${quit}: skip the training` : `${quit}: save and quit to title`];
       if (game.level.hub && input.lastDevice === 'keys') lines.push('T: replay the training');
       if (input.lastDevice === 'keys') lines.push('M: mute   N: music   V: announcer   TAB: map   X: pixel size');
       drawOverlay(ctx, 'PAUSED', [...lines, `${game.info.stageName} — ${game.theme.name}`]);
@@ -501,7 +513,7 @@ function render() {
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
       const lines = game.allPlayers().map((p) => `${p.name}: level ${p.lvl} · ${p.score} pts`);
-      lines.push('', `${btn('attack')}: continue (restart this level)`, `${btn('magic')}: retreat to the hub`);
+      lines.push('', `${btn('attack')}: continue (restart this level)`, `${btn('back')}: retreat to the hub`);
       drawOverlay(ctx, 'GAME OVER', lines, '#ff6050');
     }
   }
@@ -551,7 +563,8 @@ function frame(now) {
     case 'play': updatePlay(dt); break;
     case 'paused':
       if (input.key('Escape') || input.key('KeyP') || input.anyStart()) setState('play');
-      else if (partyPressed('magic')) {
+      // quit: Q on the keyboard (Esc resumes), B on a gamepad, MAGIC on the touch screen
+      else if (input.key('KeyQ') || partySources().some((src) => !isKb(src) && input.get(src).pressed.magic) || (input.lastDevice === 'touch' && partyPressed('magic'))) {
         if (game.level.tutorial) finishTutorial(true);
         else { persist(); game = null; setState('title'); }
       } else if (input.key('KeyT') && game.level.hub) startTutorial();

@@ -74,7 +74,7 @@ const STEPS = [
   },
   {
     title: 'READY!',
-    text: (b, dev) => `That's everything! ${dev === 'touch' ? 'Tap II' : dev === 'pad' ? 'Press Start' : 'Press P'} to pause any time. Walk into the glowing exit to begin your quest.`,
+    text: (b, dev) => `That's everything! ${dev === 'touch' ? 'Tap II' : dev === 'pad' ? 'Press Start' : 'Press Esc'} to pause any time. Walk into the glowing exit to begin your quest.`,
   },
 ];
 

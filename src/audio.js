@@ -3,7 +3,9 @@
 let ctx = null;
 let master = null;
 let muted = false;
-let voiceOn = true;
+// The spoken announcer is off unless the player turns it on (V); browser voices sound robotic.
+let voiceOn = false;
+try { voiceOn = localStorage.getItem('gl-remake-voice') === 'on'; } catch { /* storage unavailable */ }
 const lastPlayed = {};
 
 export function initAudio() {
@@ -30,6 +32,8 @@ export const isMuted = () => muted;
 
 export function toggleVoice() {
   voiceOn = !voiceOn;
+  if (!voiceOn && window.speechSynthesis) window.speechSynthesis.cancel();
+  try { localStorage.setItem('gl-remake-voice', voiceOn ? 'on' : 'off'); } catch { /* storage unavailable */ }
   return voiceOn;
 }
 

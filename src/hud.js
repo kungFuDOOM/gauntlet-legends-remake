@@ -290,7 +290,7 @@ function drawTutorial(ctx, g, tut) {
 function drawControlsBar(ctx, maxW) {
   const items = device === 'pad'
     ? [['STICK', 'move'], ['A', 'attack'], ['B', 'magic'], ['X', '+ A turbo'], ['START', 'pause']]
-    : [['WASD', 'move'], ['ENTER', 'attack'], ['E', 'magic'], ['SHIFT', '+ ENTER turbo'], ['P', 'pause'], ['H', 'hide']];
+    : [['WASD', 'move'], ['SPACE', 'attack'], ['E', 'magic'], ['SHIFT', '+ SPACE turbo'], ['ESC', 'pause'], ['H', 'hide']];
   let size = 14;
   const measure = () => {
     let total = 0;
@@ -432,9 +432,9 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
     'Drag on the left side to move · ATTACK, MAGIC and TURBO buttons on the right',
     'II pauses · ♪ turns the sound on or off · gamepads join with A',
   ] : [
-    'Move: WASD or ARROWS · Attack: ENTER or SPACE · Magic: E · Turbo: hold SHIFT + attack',
+    'Move: WASD or ARROWS · Attack: SPACE or ENTER · Magic: E · Turbo: hold SHIFT + attack',
     'Second player on the keyboard: press 2 (ARROWS + ENTER) · Gamepads: A attack · B magic · X/RB turbo',
-    'P pause · M mute · N music · V announcer · X pixel size · TAB map',
+    'ESC pause / back · M mute · N music · V announcer · X pixel size · TAB map',
   ];
   lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 540 + i * 17, '#e0d4b8', '#000', 3));
   if (hiscores.length) {
@@ -448,8 +448,9 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
 // the device kinds 'keys' / 'pad' / 'touch'), so prompts say "Press Enter" rather than
 // leaving people to guess which key is Attack.
 const BUTTON_NAMES = {
-  attack: { kb: 'Enter', kb1: 'Space', kb2: 'Enter', pad: 'A', touch: 'ATTACK' },
+  attack: { kb: 'Space', kb1: 'Space', kb2: 'Enter', pad: 'A', touch: 'ATTACK' },
   magic: { kb: 'E', kb1: 'E', kb2: '.', pad: 'B', touch: 'MAGIC' },
+  back: { kb: 'Esc', kb1: 'Esc', kb2: '.', pad: 'B', touch: 'MAGIC' }, // leaving a menu
   turbo: { kb: 'Shift', kb1: 'Left Shift', kb2: 'Right Shift', pad: 'X', touch: 'TURBO' },
 };
 let device = 'keys';
@@ -520,7 +521,7 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
   ctx.font = `13px ${SANS}`;
   const help = document.body.classList.contains('touching')
     ? 'Tap ◀ ▶ to change hero · ATTACK: ready · MAGIC: back'
-    : `Left/Right or click ◀ ▶: choose · ${btn('attack')}: ready · ${btn('magic')}: back`;
+    : `Left/Right or click ◀ ▶: choose · ${btn('attack')}: ready · ${btn('back')}: back`;
   outlined(ctx, help, VIEW_W / 2, 92, '#e0d4b8', '#000', 3);
 
   for (let s = 0; s < MAX_PLAYERS; s++) {
@@ -670,7 +671,7 @@ export function drawStory(ctx, story, time) {
     outlined(ctx, part, VIEW_W / 2, 512 + i * 28, '#f4e8c8', '#000', 4);
   });
   ctx.font = `12px ${SANS}`;
-  outlined(ctx, `${story.idx + 1} / ${story.lines.length}     ${btn('attack')}: continue     ${btn('magic')}: skip`, VIEW_W / 2, 590, '#b8a888', '#000', 3);
+  outlined(ctx, `${story.idx + 1} / ${story.lines.length}     ${btn('attack')}: continue     ${btn('back')}: skip`, VIEW_W / 2, 590, '#b8a888', '#000', 3);
   ctx.font = `bold 34px ${SERIF}`;
   const tg = ctx.createLinearGradient(0, 40, 0, 80);
   tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
@@ -717,7 +718,7 @@ export function drawRealmPick(ctx, time, progress, pick) {
   }
   ctx.textAlign = 'center';
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, `Up/Down: choose     ${btn('attack')}: enter     ${btn('magic')}: back`, VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
+  outlined(ctx, `Up/Down: choose     ${btn('attack')}: enter     ${btn('back')}: back`, VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
 }
 
 // Labels over the hub's portals and merchant, and a prompt when someone stands at one.
@@ -753,7 +754,7 @@ export function drawShop(ctx, time, g, cursors) {
   tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
   outlined(ctx, "THE MERCHANT'S STALL", VIEW_W / 2, 56, tg, '#1a0a00', 6);
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, `Up/Down: browse   ${btn('attack')}: buy   ${btn('magic')}: done   (everyone must finish)`, VIEW_W / 2, 80, '#e0d4b8', '#000', 3);
+  outlined(ctx, `Up/Down: browse   ${btn('attack')}: buy   ${btn('back')}: done   (everyone must finish)`, VIEW_W / 2, 80, '#e0d4b8', '#000', 3);
   const ps = g.allPlayers();
   const n = ps.length;
   const x0 = (VIEW_W - (SHOP_W * n + SHOP_GAP * (n - 1))) / 2;
