@@ -3,9 +3,9 @@
 let ctx = null;
 let master = null;
 let muted = false;
-// The spoken announcer is off unless the player turns it on (V); browser voices sound robotic.
-let voiceOn = false;
-try { voiceOn = localStorage.getItem('gl-remake-voice') === 'on'; } catch { /* storage unavailable */ }
+// The announcer (V turns it off or on; the choice is remembered).
+let voiceOn = true;
+try { voiceOn = localStorage.getItem('gl-remake-voice') !== 'off'; } catch { /* storage unavailable */ }
 const lastPlayed = {};
 
 export function initAudio() {
@@ -24,7 +24,7 @@ export function initAudio() {
 
 export function toggleMute() {
   muted = !muted;
-  if (muted && window.speechSynthesis) window.speechSynthesis.cancel();
+  if (muted) stopVoice();
   if (musicBus) musicBus.gain.setTargetAtTime(muted || !musicOn ? 0 : MUSIC_VOL, ctx.currentTime, 0.05);
   return muted;
 }
@@ -32,7 +32,7 @@ export const isMuted = () => muted;
 
 export function toggleVoice() {
   voiceOn = !voiceOn;
-  if (!voiceOn && window.speechSynthesis) window.speechSynthesis.cancel();
+  if (!voiceOn) stopVoice();
   try { localStorage.setItem('gl-remake-voice', voiceOn ? 'on' : 'off'); } catch { /* storage unavailable */ }
   return voiceOn;
 }
@@ -104,16 +104,85 @@ export const sfx = {
   boss() { tone(70, 1.2, { type: 'sawtooth', vol: 0.25, slide: 40 }); noise(1.2, { vol: 0.2, freq: 300 }); },
 };
 
+// ---------- the announcer ----------
+// Lines are pre-recorded with a neural voice (assets/voice, made by tools/build-voice.py)
+// and played through Web Audio. Anything without a recording uses the browser's speech
+// voice, picking the most natural-sounding one available.
+
+let voiceIndex = null; // line text -> recording file
+fetch('assets/voice/index.json').then((r) => (r.ok ? r.json() : null)).then((d) => { voiceIndex = d && d.lines; }).catch(() => {});
+const clips = new Map(); // file -> Promise<AudioBuffer>
+let speaking = null;     // { src } while a recording plays
+let queued = null;       // one line waiting for the current one to finish
+
+function loadClip(file) {
+  if (!clips.has(file)) {
+    const p = fetch(`assets/voice/${file}`).then((r) => r.arrayBuffer()).then((b) => ctx.decodeAudioData(b));
+    p.catch(() => clips.delete(file));
+    clips.set(file, p);
+  }
+  return clips.get(file);
+}
+
+function playClip(file) {
+  const me = {};
+  speaking = me;
+  loadClip(file).then((buf) => {
+    if (speaking !== me || muted || !voiceOn) return;
+    const src = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.9;
+    src.buffer = buf;
+    src.connect(gain).connect(ctx.destination);
+    src.onended = () => {
+      if (speaking !== me) return;
+      speaking = null;
+      if (queued) { const q = queued; queued = null; playClip(q); }
+    };
+    me.src = src;
+    src.start();
+  }).catch(() => { if (speaking === me) speaking = null; });
+}
+
+export function stopVoice() {
+  queued = null;
+  if (speaking && speaking.src) { try { speaking.src.stop(); } catch { /* already stopped */ } }
+  speaking = null;
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+let bestVoice;
+function browserVoice() {
+  if (bestVoice !== undefined || !window.speechSynthesis) return bestVoice;
+  const voices = window.speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
+  if (!voices.length) return null; // not loaded yet; try again next time
+  const rank = (v) => (/natural|neural|online/i.test(v.name) ? 4 : 0) + (/google uk english male|daniel|guy|ryan|arthur|male/i.test(v.name) ? 2 : 0) + (/google/i.test(v.name) ? 1 : 0);
+  bestVoice = voices.sort((a, b) => rank(b) - rank(a))[0];
+  return bestVoice;
+}
+
 const lastSaid = {};
 export function say(text, key = text, cooldown = 8000) {
-  if (muted || !voiceOn || !window.speechSynthesis) return;
+  if (muted || !voiceOn) return;
   const now = performance.now();
   if (lastSaid[key] && now - lastSaid[key] < cooldown) return;
   lastSaid[key] = now;
-  if (window.speechSynthesis.speaking && window.speechSynthesis.pending) return;
+  const story = key.startsWith('story');
+  const file = voiceIndex && voiceIndex[text];
+  if (file && ctx) {
+    if (story) stopVoice(); // a new page of the story cuts off the last one
+    if (speaking) { queued = file; return; }
+    playClip(file);
+    return;
+  }
+  if (!window.speechSynthesis) return;
+  if (story) window.speechSynthesis.cancel();
+  else if (window.speechSynthesis.speaking && window.speechSynthesis.pending) return;
   const u = new SpeechSynthesisUtterance(text);
-  u.pitch = 0.45;
-  u.rate = 0.9;
+  const v = browserVoice();
+  if (v) u.voice = v;
+  u.pitch = 0.85;
+  u.rate = 0.95;
   u.volume = 0.9;
   window.speechSynthesis.speak(u);
 }

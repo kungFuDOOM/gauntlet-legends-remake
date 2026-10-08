@@ -7,7 +7,7 @@ import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { Tutorial } from './tutorial.js';
 import { Game } from './game.js';
-import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say } from './audio.js';
+import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say, stopVoice } from './audio.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
 import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
@@ -136,7 +136,7 @@ function updateStory(dt) {
   const line = story.lines[story.idx];
   const shown = Math.floor(story.t * 45);
   const any = (b) => input.firstPressed(b) || (b === 'attack' && input.anyStart());
-  if (anyBack()) { if (window.speechSynthesis) window.speechSynthesis.cancel(); story.next(); return; }
+  if (anyBack()) { stopVoice(); story.next(); return; }
   if (any('attack')) {
     if (shown < line.length) { story.t = line.length / 45 + 0.01; return; }
     story.idx++;

@@ -41,7 +41,7 @@ To keep the repository private instead, connect it to a free static host such as
 | **Shared keyboard, player 2** | Arrows | Enter / `/` | `.` / `'` | Right Shift / `,` |
 | **Gamepads** (up to 4) | Stick / D-pad | A / RT | B / Y | X / RB + A |
 
-`Esc`/`P`/Start pauses (and `Esc` backs out of menus; `Q` saves and quits from the pause menu) · `H` shows or hides the controls bar at the bottom of the screen · `M` mutes sound · `N` toggles music · `V` turns the spoken announcer on (it's off by default) · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
+`Esc`/`P`/Start pauses (and `Esc` backs out of menus; `Q` saves and quits from the pause menu) · `H` shows or hides the controls bar at the bottom of the screen · `M` mutes sound · `N` toggles music · `V` turns the announcer off or on · `X` changes the pixel size (retro / chunky / off) · `Tab` shows a map of explored areas.
 
 Up to **4 players** can play co-op on one screen. On your own, every key above (and the touch screen, if you have one) controls your hero. Gamepads join by pressing Attack, even in the middle of a level. For two players on one keyboard, press **2**: player 1 keeps WASD and player 2 gets the arrow keys.
 
@@ -51,7 +51,7 @@ Up to **4 players** can play co-op on one screen. On your own, every key above (
 
 The demon lord Skorne has broken free of the seal that bound him, and the Rune Stones that held him are scattered across the realms. You play through the same structure as the arcade original:
 
-- **Story:** an intro explains the quest. Each realm gets its own introduction, and there is an ending once Skorne falls. The text is original, written for this remake.
+- **Story:** an intro, read aloud by the announcer, explains the quest. Each realm gets its own introduction, and there is an ending once Skorne falls. The text is original, written for this remake.
 - **The hub (as in Dark Legacy):** a walkable plaza with a portal to each realm. Step into a portal and pick a stage. Stages in a realm open one after another, ending with its **guardian** (the Dragon, the Chimera, the Plague Fiend). The **Underworld** portal stays sealed until all three guardians are defeated; Skorne waits at its end. You return to the hub after every level.
 - **Rune Stones:** each guardian carries one, and every level hides another in a **secret room behind a cracked wall**. Smash the wall to get in. There are 16 in all.
 - **Gold and the merchant:** treasure gives gold. Walk up to the merchant in the hub to buy food, magic potions, keys and permanent **Strength / Armor / Speed / Magic** upgrades. Each player shops with their own gold.
@@ -88,7 +88,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
 - **Music** composed on the fly for the title, each realm, boss fights, the shop, treasure rooms and the victory screen.
 - **Difficulty that scales** with the level and the size of the party: monsters get tougher and generators busier further into the quest and with more players, while treasure is worth more in later realms.
-- **Arcade announcer** via your browser's speech synthesis ("Warrior needs food, badly!"), off by default: press `V` to turn it on. Also: a shared camera that keeps the party together, a minimap of explored areas, a high score table, and drop-in "continue" after dying.
+- **Arcade announcer** with pre-recorded neural-voice lines ("Warrior needs food, badly!"), made with the open Kokoro voice model; `V` turns it off. Also: a shared camera that keeps the party together, a minimap of explored areas, a high score table, and drop-in "continue" after dying.
 
 ## Project layout
 
@@ -106,8 +106,11 @@ src/models.js     procedural models for the Dragon, Chimera and Plague Fiend, ma
 src/hud.js        2D overlay: corner player panels, floating text, banners, menus
 vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder (MIT)
 assets/models/    CC0 KayKit models, prepared by tools/build-assets.mjs
-src/input.js      keyboard and gamepad input sources
-src/audio.js      synthesized sound effects and announcer
+assets/voice/     announcer recordings, made by tools/voice-lines.mjs + tools/build-voice.py
+src/input.js      keyboard, gamepad and touch input sources
+src/touch.js      on-screen controls for phones and tablets
+src/tutorial.js   the Training Grounds lessons
+src/audio.js      synthesized sound effects, music and the announcer
 src/config.js     tuning tables for classes, enemies and power-ups
 test/             node:test suite (level generation and solvability)
 ```
