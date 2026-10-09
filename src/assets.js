@@ -294,6 +294,9 @@ export class Actor {
   get busy() { return !!this.oneShot; }
 
   update(dt) {
+    // Paused (no time passed): leave the pose alone. The mixer doesn't rewrite bones for a
+    // zero step, so adultPose's relative arm turn would pile up every frame and spin the arms.
+    if (!(dt > 0)) return;
     if (this.baseAction && !this.oneShot && this.baseAction.getEffectiveWeight() < 0.5) this.baseAction.setEffectiveWeight(1);
     this.mixer.update(dt);
     if (this.adult) this.adultPose();
