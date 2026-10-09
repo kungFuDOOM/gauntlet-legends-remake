@@ -551,7 +551,7 @@ export function drawSelect(ctx, time, slots, countdown, heroes = {}) {
     ctx.font = `11px ${SANS}`;
     outlined(ctx, Input.label(slot.source), x + SEL_W / 2, y + 42, '#b8a888', '#000', 2);
     if (def.secret) { ctx.font = `bold 11px ${SANS}`; outlined(ctx, '★ SECRET HERO ★', x + SEL_W / 2, y + 76, '#ff9af0', '#000', 3); }
-    const saved = heroes[slot.cls];
+    const saved = !slot.source.startsWith('net') && heroes[slot.cls]; // online guests play fresh heroes
     if (saved) { ctx.font = `bold 12px ${SANS}`; outlined(ctx, `SAVED HERO · LEVEL ${saved.lvl} · ${saved.gold} GOLD`, x + SEL_W / 2, y + 60, '#ffd860', '#000', 3); }
     if (!slot.ready) {
       for (const dir of [-1, 1]) drawArrowButton(ctx, x + SEL_W / 2 + dir * (SEL_W / 2 - SEL_ARROW_INSET), y + SEL_ARROW_Y, dir, def.color);

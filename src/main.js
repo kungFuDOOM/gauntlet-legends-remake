@@ -121,8 +121,10 @@ function nextFreeClass(taken) {
 // ---------- quest save ----------
 
 let save = loadSave();
+// Saves the quest and the heroes of the players on this machine (online guests' heroes are
+// theirs for the session only, so they never overwrite the host's saved heroes).
 function persist() {
-  if (game) for (const p of game.allPlayers()) save.heroes[p.cls] = game.heroSave(p);
+  if (game) for (const p of game.allPlayers()) if (!isNet(p.source)) save.heroes[p.cls] = game.heroSave(p);
   writeSave(save);
 }
 let story = null;     // { lines, idx, t, next }
@@ -234,7 +236,8 @@ function CLASSES_NAME(cls) { return cls[0].toUpperCase() + cls.slice(1); }
 
 function startGame() {
   game = new Game();
-  slots.forEach((s, i) => { if (s) game.addPlayer(i, s.source, s.cls, save.heroes[s.cls]); });
+  // online guests start with fresh heroes; players here continue their saved ones
+  slots.forEach((s, i) => { if (s) game.addPlayer(i, s.source, s.cls, isNet(s.source) ? null : save.heroes[s.cls]); });
   if (!save.progress.tutorialDone) startTutorial();
   else openMap();
 }
@@ -326,7 +329,7 @@ function updateRealmPick() {
 // gamepads. Guests draw what the host sends. See net.js (connection) and netstate.js (state).
 
 let net = null; // host: { role, link, code, writer, fx, sendT } · guest: { role, link, code, me, reader, ui }
-const isNet = (src) => src.startsWith('net');
+function isNet(src) { return src.startsWith('net'); }
 const lobby = new Lobby({ onHost: hostOnline, onJoin: joinOnline, onLeave: () => leaveOnline('You left the online game.') });
 
 async function hostOnline() {
@@ -491,7 +494,7 @@ function updatePlay(dt) {
   if (joiner && roomy) {
     const slot = [0, 1, 2, 3].find((i) => !game.players[i]);
     const cls = nextFreeClass(game.allPlayers().map((p) => p.cls));
-    game.joinMidGame(slot, joiner, cls, save.heroes[cls]);
+    game.joinMidGame(slot, joiner, cls, isNet(joiner) ? null : save.heroes[cls]);
   }
   for (const p of game.allPlayers()) {
     if (!p.alive && p.deadT > 1.5 && input.get(p.source).pressed.attack) game.respawn(p);

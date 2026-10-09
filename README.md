@@ -56,7 +56,8 @@ Friends can join your game over the internet, on PCs or phones, up to 4 players 
 
 How it works: the host's browser runs the game and streams it to the guests about 20 times a second; guests send back their button presses. Players connect directly to each other (WebRTC), using the free public [PeerJS](https://peerjs.com) server only to find each other, so there's nothing to host or pay for. Good to know:
 
-- The campaign (Rune Stones, unlocked stages, saved heroes) is the host's. Guests can pause and resume, but only the host can quit; if the host leaves, the game ends for everyone.
+- The campaign (Rune Stones, unlocked stages and secret heroes) is the host's: guests can pick any hero the host has unlocked. Guests' heroes start fresh (level 1, no gold) and last for that session; they never change the host's saved heroes or the guest's own save.
+- Guests can pause and resume, but only the host can quit; if the host leaves, the game ends for everyone.
 - Guests see their own hero with a little delay (about the time a message takes to reach the host and back).
 - A few strict networks (some school, office or mobile-carrier connections) block direct connections between players. If joining fails there, try another network or a phone hotspot.
 - Everyone needs the same version of the game: after an update, both host and guests should refresh the page.
