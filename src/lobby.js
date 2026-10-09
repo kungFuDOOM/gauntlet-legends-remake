@@ -1,11 +1,10 @@
-// The online lobby: a PLAY ONLINE button on the title screen, a panel to host or join a game
-// by room code, and a small status bar (room code, players, Leave) while online.
+// The online lobby: a panel to host or join a game by room code (opened from the PLAY ONLINE
+// button the title screen draws), and a small status bar (room code, players, Leave) while online.
 
 const CSS = `
-#lobby-btn { position: fixed; left: 12px; top: 12px; z-index: 15; display: none; }
-#lobby-btn, #lobby button { font: bold 14px 'Trebuchet MS', sans-serif; color: #fff4d0; background: rgba(40,26,10,0.85);
+#lobby button { font: bold 14px 'Trebuchet MS', sans-serif; color: #fff4d0; background: rgba(40,26,10,0.85);
   border: 2px solid #c89a3a; border-radius: 8px; padding: 9px 14px; cursor: pointer; touch-action: manipulation; }
-#lobby-btn:hover, #lobby button:hover { background: rgba(80,52,16,0.95); }
+#lobby button:hover { background: rgba(80,52,16,0.95); }
 #lobby { position: fixed; inset: 0; z-index: 16; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); }
 #lobby .box { background: #1a120a; border: 2px solid #c89a3a; border-radius: 12px; padding: 20px 22px; width: min(360px, 90vw);
   color: #f0e6d0; font: 14px 'Trebuchet MS', sans-serif; text-align: center; box-shadow: 0 8px 30px #000; }
@@ -31,12 +30,6 @@ export class Lobby {
     style.textContent = CSS;
     document.head.appendChild(style);
 
-    this.btn = document.createElement('button');
-    this.btn.id = 'lobby-btn';
-    this.btn.textContent = '🌐 PLAY ONLINE';
-    this.btn.addEventListener('click', () => this.open());
-    document.body.appendChild(this.btn);
-
     this.panel = document.createElement('div');
     this.panel.id = 'lobby';
     this.panel.innerHTML = `
@@ -60,7 +53,7 @@ export class Lobby {
     this.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.join(); if (e.key === 'Escape') this.close(); });
     this.input.addEventListener('input', () => { this.input.value = this.input.value.toUpperCase().replace(/[^A-Z]/g, ''); });
     // keep the game from reacting to taps and keys aimed at the panel
-    for (const el of [this.panel, this.btn]) el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.panel.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     this.bar = document.createElement('div');
     this.bar.id = 'online-bar';
@@ -96,8 +89,6 @@ export class Lobby {
   // Called every frame: show the right pieces for the current screen.
   //   online: null | { role: 'host' | 'guest', code, players }
   update(state, online) {
-    const showBtn = state === 'title' && !online;
-    if (this.btn.style.display !== (showBtn ? 'block' : 'none')) this.btn.style.display = showBtn ? 'block' : 'none';
     if (online && this.isOpen) this.close();
     const showBar = !!online && state !== 'play';
     if (this.bar.style.display !== (showBar ? 'flex' : 'none')) this.bar.style.display = showBar ? 'flex' : 'none';

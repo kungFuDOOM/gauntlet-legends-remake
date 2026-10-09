@@ -392,7 +392,40 @@ export function titleShowcase(time) {
   return CLASS_ORDER.map((cls, i) => ({ cls, sx: 95 + i * 110, sy: 450, scale: 1.02, turn: Math.sin(time * 0.7 + i) * 0.35 }));
 }
 
-export function drawTitle(ctx, time, hiscores, progress = null) {
+// The PLAY ONLINE button on the title screen (tapped, clicked, or O on the keyboard).
+const ONLINE_BTN = { x: VIEW_W / 2 - 170, y: 518, w: 340, h: 44 };
+export function titleOnlineAt(x, y) {
+  const b = ONLINE_BTN;
+  return x >= b.x - 10 && x <= b.x + b.w + 10 && y >= b.y - 8 && y <= b.y + b.h + 8;
+}
+
+function drawOnlineButton(ctx, time) {
+  const { x, y, w, h } = ONLINE_BTN;
+  const pulse = 0.5 + Math.sin(time * 3) * 0.5;
+  ctx.save();
+  ctx.shadowColor = `rgba(80,200,255,${0.45 + pulse * 0.45})`;
+  ctx.shadowBlur = 12 + pulse * 16;
+  roundRect(ctx, x, y, w, h, 12);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, '#3fb4f0'); g.addColorStop(1, '#1a5fb0');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#d8f2ff';
+  ctx.stroke();
+  ctx.textAlign = 'center';
+  ctx.font = `bold 21px ${SANS}`;
+  outlined(ctx, '🌐  PLAY ONLINE WITH FRIENDS', VIEW_W / 2, y + 29, '#ffffff', '#0a2a50', 4);
+  ctx.restore();
+  if (device !== 'touch') {
+    ctx.font = `bold 13px ${SANS}`;
+    ctx.textAlign = 'left';
+    outlined(ctx, '(or press O)', x + w + 12, y + 27, '#a8d8f0', '#000', 3);
+  }
+}
+
+export function drawTitle(ctx, time, hiscores, progress = null, online = false) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   const vg = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, 200, VIEW_W / 2, VIEW_H / 2, 620);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)');
@@ -425,8 +458,9 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
   }
   if (progress) {
     ctx.font = `bold 13px ${SANS}`;
-    outlined(ctx, `Rune Stones: ${Object.keys(progress.runes).length} / 16   ·   ${btn('magic')}: begin a new quest`, VIEW_W / 2, 519, '#ffd890', '#000', 3);
+    outlined(ctx, `Rune Stones: ${Object.keys(progress.runes).length} / 16   ·   ${btn('magic')}: begin a new quest`, VIEW_W / 2, 246, '#ffd890', '#000', 3);
   }
+  if (online) drawOnlineButton(ctx, time);
   ctx.font = `12px ${SANS}`;
   const lines = device === 'touch' ? [
     'Drag on the left side to move · ATTACK, MAGIC and TURBO buttons on the right',
@@ -436,11 +470,13 @@ export function drawTitle(ctx, time, hiscores, progress = null) {
     'Second player on the keyboard: press 2 (ARROWS + ENTER) · Gamepads: A attack · B magic · X/RB turbo',
     'ESC pause / back · M mute · N music · V announcer · X pixel size · TAB map',
   ];
-  lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 540 + i * 17, '#e0d4b8', '#000', 3));
+  lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, (online ? 592 : 540) + i * 15, '#e0d4b8', '#000', 3));
   if (hiscores.length) {
     ctx.font = `bold 12px ${SANS}`;
     const h = hiscores[0];
-    outlined(ctx, `HIGH SCORE  ${h.score}  ${h.name.toUpperCase()}  (LEVEL ${h.level})`, VIEW_W / 2, 624, '#ffd040', '#000', 3);
+    // with the online button showing, the bottom is full: the high score goes under the logo
+    const hy = !online ? 624 : progress ? 264 : 246;
+    outlined(ctx, `HIGH SCORE  ${h.score}  ${h.name.toUpperCase()}  (LEVEL ${h.level})`, VIEW_W / 2, hy, '#ffd040', '#000', 3);
   }
 }
 

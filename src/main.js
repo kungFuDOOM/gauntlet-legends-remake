@@ -13,7 +13,7 @@ import { SnapshotWriter, SnapshotReader, playSound } from './netstate.js';
 import { Lobby } from './lobby.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
@@ -51,7 +51,7 @@ input.touch = new TouchControls({
 // Taps and clicks on the screen itself (not the on-screen buttons), in game coordinates.
 const taps = [];
 window.addEventListener('pointerdown', (e) => {
-  if (e.button > 0 || (e.target.closest && e.target.closest('.btn, #rotate, #lobby, #lobby-btn, #online-bar'))) return;
+  if (e.button > 0 || (e.target.closest && e.target.closest('.btn, #rotate, #lobby, #online-bar'))) return;
   const r = stage.getBoundingClientRect();
   if (!r.width) return;
   taps.push({ x: (e.clientX - r.left) * VIEW_W / r.width, y: (e.clientY - r.top) * VIEW_H / r.height });
@@ -155,9 +155,12 @@ function updateStory(dt) {
 
 // On the title screen almost any key starts (people try A, Enter, Space...), except the
 // ones that do something else there.
-const TITLE_IGNORE = /^(Key[EGMNVXP]|Period|NumpadDecimal|Quote|Tab|Escape|F\d+|Meta|Alt|Control|OS|ContextMenu|CapsLock)/;
+const TITLE_IGNORE = /^(Key[EGMNVXPO]|Period|NumpadDecimal|Quote|Tab|Escape|F\d+|Meta|Alt|Control|OS|ContextMenu|CapsLock)/;
 
 function updateTitle() {
+  // the PLAY ONLINE button: tap or click it, or press O
+  if (!net && !lobby.isOpen && (input.key('KeyO') || taps.some((t) => titleOnlineAt(t.x, t.y)))) { initAudio(); sfx.select(); lobby.open(); return; }
+  if (lobby.isOpen) { if (input.key('Escape')) lobby.close(); return; } // don't start the game under the panel
   const anyKey = input.frameGlobal && [...input.frameGlobal].some((k) => !TITLE_IGNORE.test(k));
   const atk = input.firstPressed('attack') || (input.anyStart() && input.sources().find((id) => input.get(id).pressed.start)) || (anyKey && 'kb');
   if (input.firstPressed('magic') && hasProgress(save)) { initAudio(); setState('confirm'); return; }
@@ -621,7 +624,7 @@ function render() {
     drawLoading(ctx, loadProgress, loadError);
   } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
-    drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null);
+    drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null, !net && state === 'title');
     if (guest) drawOverlay(ctx, `ROOM ${net.code}`, ['Connected! Waiting for the host to start...', `Press ${btn('attack')} to join the party`], '#8fe0ff');
     if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
   } else if (state === 'story') {

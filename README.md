@@ -51,8 +51,8 @@ Up to **4 players** can play co-op on one screen. On your own, every key above (
 
 Friends can join your game over the internet, on PCs or phones, up to 4 players in all.
 
-1. **Host:** on the title screen, press **🌐 PLAY ONLINE**, then **Host a game**. You get a 4-letter room code (it stays at the bottom of the screen on menus). Start the game as usual.
-2. **Friends:** open the same site, press **🌐 PLAY ONLINE**, type the code and press **Join**. On the hero select screen (or at any time during play) they press Attack to jump in, just like a gamepad player.
+1. **Host:** on the title screen, tap or click the blue **🌐 PLAY ONLINE WITH FRIENDS** button (or press **O**), then **Host a game**. You get a 4-letter room code (it stays at the bottom of the screen on menus). Start the game as usual.
+2. **Friends:** open the same site, tap the same button, type the code and press **Join**. On the hero select screen (or at any time during play) they press Attack to jump in, just like a gamepad player.
 
 How it works: the host's browser runs the game and streams it to the guests about 20 times a second; guests send back their button presses. Players connect directly to each other (WebRTC), using the free public [PeerJS](https://peerjs.com) server only to find each other, so there's nothing to host or pay for. Good to know:
 
