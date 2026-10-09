@@ -71,3 +71,65 @@ test('snapshots stay small enough to send 20 times a second', () => {
   const bytes = JSON.stringify(new SnapshotWriter().game(host)).length;
   assert.ok(bytes < 12000, `${bytes} bytes`);
 });
+
+test('guests shrug off malicious or malformed snapshots from a host', async () => {
+  const { cleanUi, cleanEvents, cleanGame } = await import('../src/netstate.js');
+  const reader = new SnapshotReader(Game);
+  const evil = {
+    k: 'L999', q: 1, tm: 'soon', tiles: [1e12, 99, -5, 3], P: [], E: [], G: [], I: [], R: [],
+  };
+  assert.equal(reader.apply(evil, []), null, 'an unknown level key is refused');
+  assert.equal(cleanGame({ k: '__proto__' }), null);
+
+  const host = new Game();
+  host.addPlayer(0, 'kb', 'warrior');
+  host.startLevel(1);
+  const snap = wire(new SnapshotWriter().game(host));
+  snap.tiles = [0, 99, 5, 3, 1e9, 2, 'x', 'y'];
+  snap.P = [snap.P[0], [3, 'archer', '<img src=x onerror=alert(1)>', 'NaN', Infinity], [1, '__proto__', 'net1'], 'junk', [2, 'wizard']];
+  snap.E = [...snap.E, [1e15, 'toString', 1, 1], [7, 'grunt', NaN, 'a', {}, null]];
+  snap.I = [[1, 'amulet', '__proto__', 1, 1], [2, 'rune', 'hidden', 5, 5], [3, 'gold<script>', 0, 1, 1]];
+  snap.R = [[1, 'nuke', 0, 0], [2, 'arrow', 1, 1, 1, 1]];
+  snap.E.length = Math.min(snap.E.length, 50);
+  const fx = [['a', 'constructor'], ['a', '__proto__'], ['p', 1, 1, 1, 1, 'url(javascript:alert(1))'], ['t', 0, 0, 'x'.repeat(10000)], ['zz'], 'junk', ['b', 0, 0, '#fff', 1e9, 1e9]];
+  const g = reader.apply(snap, fx);
+  assert.ok(g, 'the valid parts still apply');
+  assert.equal(g.tiles[0], 9, 'tile values are clamped to real tile types');
+  assert.deepEqual(g.allPlayers().map((p) => p.cls).sort(), ['archer', 'warrior'], 'unknown hero classes are dropped');
+  const archer = g.allPlayers().find((p) => p.cls === 'archer');
+  assert.equal(archer.source, 'net0', 'odd source names are replaced');
+  assert.ok(Number.isFinite(archer.x) && Number.isFinite(archer.y));
+  assert.ok(!g.enemies.some((e) => e.type === 'toString'));
+  assert.ok(g.enemies.every((e) => Number.isFinite(e.x) && Number.isFinite(e.hp)));
+  assert.deepEqual(g.items.map((i) => i.type), ['rune']);
+  assert.deepEqual(g.projs.map((p) => p.kind), ['arrow']);
+  assert.ok(g.particles.length <= 120, 'bursts are capped');
+  assert.ok(g.particles.every((p) => /^#[0-9a-f]{3,8}$/i.test(p.color)), 'colors are checked');
+  assert.ok(g.texts.every((t) => t.text.length <= 60), 'floating text is capped');
+  assert.deepEqual(cleanEvents([['a', 'hasOwnProperty'], ['a', 'join', 'x'.repeat(99)]]).map((e) => e[1]), ['join']);
+
+  // menu state
+  assert.equal(cleanUi('hacked', {}), null);
+  const ui = cleanUi('select', {
+    slots: [{ cls: '__proto__' }, { cls: 'wizard', source: 'net1', ready: 1 }, 5],
+    prog: { completed: { 4: true, __proto__: { polluted: true }, 99: true }, runes: { h1: true, 'x"><b>': true } },
+    heroes: { wizard: { lvl: 1e12, gold: -5 }, constructor: { lvl: 1 } },
+    story: { lines: ['ok', 42, 'y'.repeat(5000)], idx: 99 },
+    toast: '<b>hi</b>'.repeat(50),
+  });
+  assert.deepEqual(ui.slots, [null, { source: 'net1', cls: 'wizard', ready: true }, null]);
+  assert.deepEqual(Object.keys(ui.prog.completed), ['4']);
+  assert.deepEqual(Object.keys(ui.prog.runes), ['h1']);
+  assert.equal(({}).polluted, undefined, 'no prototype pollution');
+  assert.deepEqual(ui.heroes, { wizard: { lvl: 999, gold: 0 } });
+  assert.deepEqual(ui.story.lines.map((l) => l.length), [2, 0, 400]);
+  assert.equal(ui.story.idx, 11);
+  assert.ok(ui.toast.length <= 120);
+});
+
+test('room codes are letters only and the right length', async () => {
+  const { cleanCode, CODE_LENGTH } = await import('../src/net.js');
+  assert.equal(CODE_LENGTH, 6);
+  assert.equal(cleanCode(' ab-c1d<e>f9g '), 'ABCDEF');
+  assert.equal(cleanCode(null), '');
+});

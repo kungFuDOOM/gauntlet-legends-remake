@@ -11,7 +11,8 @@ The **heroes** are original models built in code (`src/heroes.js`) in the style 
 ## Play
 
 ```bash
-npm start          # serves the game at http://localhost:8080
+npm start          # serves the game at http://localhost:8080 (this computer only)
+HOST=0.0.0.0 npm start   # also reachable from a phone on the same Wi-Fi
 ```
 
 Any static file server works too, e.g. `python3 -m http.server`. The game uses ES modules, so opening `index.html` straight from disk won't work. You need a browser with WebGL; any recent desktop browser has it. Because it is fully static, it can also be hosted on GitHub Pages.
@@ -63,7 +64,10 @@ How it works: the host's browser runs the game and streams it to the guests abou
 - Guests see their own hero with a little delay (about the time a message takes to reach the host and back).
 - A few strict networks (some school, office or mobile-carrier connections) block direct connections between players. If joining fails there, try another network or a phone hotspot.
 - Everyone needs the same version of the game: after an update, both host and guests should refresh the page.
-- To use your own matchmaking server instead of the public one (for example when you have your own site), run the [PeerJS server](https://github.com/peers/peerjs-server) and open the game with `?peer=yourserver:port`, or replace `src/net.js` with your own connection code: the rest of the game only uses its `Host` and `Guest` classes.
+- Players connect directly, so the people in your room can see your internet (IP) address, as in most peer-to-peer games. Only share room codes with people you know.
+- To use your own matchmaking server instead of the public one (for example when you have your own site), run the [PeerJS server](https://github.com/peers/peerjs-server), set `PEER_SERVER` at the top of `src/net.js`, and add its address to `connect-src` in the security policy in `index.html`. Or replace `src/net.js` with your own connection code: the rest of the game only uses its `Host` and `Guest` classes.
+
+See [SECURITY.md](SECURITY.md) for how the game is protected.
 
 ## The quest
 

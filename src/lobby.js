@@ -1,3 +1,5 @@
+import { CODE_LENGTH, cleanCode } from './net.js';
+
 // The online lobby: a panel to host or join a game by room code (opened from the PLAY ONLINE
 // button the title screen draws), and a small status bar (room code, players, Leave) while online.
 
@@ -11,7 +13,7 @@ const CSS = `
 #lobby h2 { margin: 0 0 6px; font: bold 22px Georgia, serif; color: #f2c14e; }
 #lobby p { margin: 6px 0 14px; color: #c8b890; line-height: 1.35; }
 #lobby .row { display: flex; gap: 8px; justify-content: center; margin: 8px 0; }
-#lobby input { width: 110px; font: bold 22px monospace; letter-spacing: 4px; text-transform: uppercase; text-align: center;
+#lobby input { width: 150px; font: bold 22px monospace; letter-spacing: 4px; text-transform: uppercase; text-align: center;
   background: #0d0905; color: #ffe8a0; border: 2px solid #8a6a2a; border-radius: 8px; padding: 6px; }
 #lobby .msg { min-height: 20px; margin-top: 10px; color: #ffb080; }
 #lobby .close { background: transparent; border-color: #6a5a3a; color: #c8b890; margin-top: 8px; }
@@ -37,7 +39,7 @@ export class Lobby {
         <h2>Play online</h2>
         <p>Host a game and share its code with friends, or join a friend's game with theirs.</p>
         <div class="row"><button data-a="host">Host a game</button></div>
-        <div class="row"><input maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false"><button data-a="join">Join</button></div>
+        <div class="row"><input maxlength="${CODE_LENGTH}" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false"><button data-a="join">Join</button></div>
         <div class="msg"></div>
         <button class="close" data-a="close">Close</button>
       </div>`;
@@ -51,15 +53,21 @@ export class Lobby {
       else if (a === 'close' || e.target === this.panel) this.close();
     });
     this.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.join(); if (e.key === 'Escape') this.close(); });
-    this.input.addEventListener('input', () => { this.input.value = this.input.value.toUpperCase().replace(/[^A-Z]/g, ''); });
+    this.input.addEventListener('input', () => { this.input.value = cleanCode(this.input.value); });
     // keep the game from reacting to taps and keys aimed at the panel
     this.panel.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     this.bar = document.createElement('div');
     this.bar.id = 'online-bar';
-    this.bar.innerHTML = '<span></span><button>Leave</button>';
-    this.barText = this.bar.querySelector('span');
-    this.bar.querySelector('button').addEventListener('click', () => this.h.onLeave());
+    // built from text nodes only: nothing shown here is ever parsed as HTML
+    this.barText = document.createElement('span');
+    this.barCode = document.createElement('b');
+    this.barRest = document.createElement('span');
+    this.barText.append(this.barCode, this.barRest);
+    const leave = document.createElement('button');
+    leave.textContent = 'Leave';
+    this.bar.append(this.barText, leave);
+    leave.addEventListener('click', () => this.h.onLeave());
     this.bar.addEventListener('pointerdown', (e) => e.stopPropagation());
     document.body.appendChild(this.bar);
   }
@@ -78,8 +86,8 @@ export class Lobby {
   }
 
   join() {
-    const code = this.input.value.trim().toUpperCase();
-    if (code.length !== 4) { this.say('Enter the 4-letter code from the host.'); return; }
+    const code = cleanCode(this.input.value);
+    if (code.length !== CODE_LENGTH) { this.say(`Enter the ${CODE_LENGTH}-letter code from the host.`); return; }
     this.say('Connecting...');
     this.h.onJoin(code);
   }
@@ -93,10 +101,15 @@ export class Lobby {
     const showBar = !!online && state !== 'play';
     if (this.bar.style.display !== (showBar ? 'flex' : 'none')) this.bar.style.display = showBar ? 'flex' : 'none';
     if (online) {
-      const text = online.role === 'host'
-        ? `ROOM <b>${online.code}</b> · ${online.players ? `${online.players} friend${online.players === 1 ? '' : 's'} online` : 'share the code with friends'}`
-        : `ONLINE · room <b>${online.code}</b>`;
-      if (this.barText.innerHTML !== text) this.barText.innerHTML = text;
+      const before = online.role === 'host' ? 'ROOM ' : 'ONLINE · room ';
+      const after = online.role === 'host'
+        ? ` · ${online.players ? `${online.players} friend${online.players === 1 ? '' : 's'} online` : 'share the code with friends'}`
+        : '';
+      const code = cleanCode(online.code);
+      if (this.barText.firstChild !== this.barCode) this.barText.prepend(document.createTextNode(''));
+      if (this.barText.firstChild.textContent !== before) this.barText.firstChild.textContent = before;
+      if (this.barCode.textContent !== code) this.barCode.textContent = code;
+      if (this.barRest.textContent !== after) this.barRest.textContent = after;
     }
   }
 }

@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Security: only this site's own files may run (plus WebAssembly for the 3D model decoder,
+       and the import map below, pinned by its hash: test/security.test.js checks it). Online play
+       may talk to the PeerJS matchmaking server. If you edit the import map or use your own
+       PeerJS server, update this line. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-98FR/5EhpsYi7t2PObXfZgeFRlxSOl/QKHA09y3mtL4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data: https://0.peerjs.com wss://0.peerjs.com http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -29,10 +35,6 @@
     <canvas id="hud"></canvas>
   </div>
   <div id="error">This game needs WebGL. Please use a recent browser with hardware acceleration enabled.</div>
-  <script>
-    // always load the newest version of the game after an update (see sw.js)
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-  </script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

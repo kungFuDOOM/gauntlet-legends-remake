@@ -177,7 +177,7 @@ export function say(text, key = text, cooldown = 8000) {
   if (lastSaid[key] && now - lastSaid[key] < cooldown) return;
   lastSaid[key] = now;
   const story = key.startsWith('story');
-  const file = voiceIndex && voiceIndex[text];
+  const file = voiceIndex && Object.prototype.hasOwnProperty.call(voiceIndex, text) ? voiceIndex[text] : null;
   if (file && ctx) {
     if (story) stopVoice(); // a new page of the story cuts off the last one
     if (speaking) { queued = file; return; }

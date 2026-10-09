@@ -9,13 +9,16 @@ import { Tutorial, tutorialView } from './tutorial.js';
 import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say, stopVoice, audioTap } from './audio.js';
 import { Host, Guest } from './net.js';
-import { SnapshotWriter, SnapshotReader, playSound } from './netstate.js';
+import { SnapshotWriter, SnapshotReader, playSound, cleanUi, cleanEvents } from './netstate.js';
 import { Lobby } from './lobby.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
 import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
+
+// Always load the newest version of the game after an update (see sw.js).
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 const stage = document.getElementById('stage');
 const hudCanvas = document.getElementById('hud');
@@ -424,23 +427,31 @@ function hostSend(dt) {
   net.link.send({ t: 's', st: state, stT: Math.round(stateT * 100) / 100, ui, g: game ? net.writer.game(game) : null, fx });
 }
 
-// Guest: apply what the host sent.
+// Guest: apply what the host sent (all of it checked first: see netstate.js).
 function guestMessage(m) {
   if (!net || m.t !== 's') return;
-  // keep our own clock for the screen's animations; only resync when it drifts
-  if (state !== m.st || Math.abs(stateT - m.stT) > 0.5) stateT = m.stT;
-  state = m.st;
-  const ui = (net.ui = m.ui || {});
-  slots = ui.slots || [];
-  countdown = ui.cd;
-  realmPick = ui.rp;
-  shop = ui.shop || [];
-  clearInfo = ui.ci;
-  story = ui.story ? { ...ui.story, next() {} } : null;
-  if (ui.toast && ui.toast !== net.lastToast) toast = { text: ui.toast, t: 2.5, local: true };
-  net.lastToast = ui.toast;
-  game = net.reader.apply(m.g, m.fx);
-  if (!m.g) for (const ev of m.fx || []) playSound(ev);
+  try {
+    const ui = cleanUi(m.st, m.ui);
+    if (!ui) return;
+    // keep our own clock for the screen's animations; only resync when it drifts
+    const stT = Number(m.stT) || 0;
+    if (state !== m.st || Math.abs(stateT - stT) > 0.5) stateT = stT;
+    state = m.st;
+    net.ui = ui;
+    slots = ui.slots;
+    countdown = ui.cd;
+    realmPick = ui.rp;
+    shop = ui.shop;
+    clearInfo = ui.ci;
+    story = ui.story ? { ...ui.story, next() {} } : null;
+    if (ui.toast && ui.toast !== net.lastToast) toast = { text: ui.toast, t: 2.5, local: true };
+    net.lastToast = ui.toast;
+    game = net.reader.apply(m.g, m.fx);
+    if (!m.g) for (const ev of cleanEvents(m.fx)) playSound(ev);
+  } catch (err) {
+    console.error(err);
+    leaveOnline('The host sent something this game could not read.');
+  }
 }
 
 // Guest: everything on this device (keys, touch, gamepad) drives this guest's one hero.
