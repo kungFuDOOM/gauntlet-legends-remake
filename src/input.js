@@ -33,18 +33,25 @@ export class Input {
     // the kind of device last used ('keys', 'pad' or 'touch'), so prompts can name its buttons
     this.lastDevice = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches ? 'touch' : 'keys';
     window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') this.lastDevice = 'touch'; }, true);
+    this.remote = new Map(); // online guests: id ('net1', ...) -> { held, acc } (fed by main.js)
+    const typing = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
     window.addEventListener('keydown', (e) => {
+      if (typing(e)) return;
       if (PREVENT.has(e.code)) e.preventDefault();
       if (!this.keys.has(e.code)) this.globalPressed.add(e.code);
       this.keys.add(e.code);
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code));
+    window.addEventListener('keyup', (e) => { if (!typing(e)) this.keys.delete(e.code); });
     window.addEventListener('blur', () => this.keys.clear());
   }
 
+  static me = null; // on an online guest, this player's id on the host
+
   static label(id) {
+    if (Input.me) return id === Input.me ? 'You' : id.startsWith('net') ? 'Online player' : 'Host';
     if (id === 'kb') return document.body.classList.contains('touching') ? 'Touch screen' : 'Keyboard';
     if (KB_SCHEMES[id]) return KB_SCHEMES[id].label;
+    if (id.startsWith('net')) return 'Online player';
     return `Gamepad ${Number(id.slice(3)) + 1}`;
   }
 
@@ -86,6 +93,12 @@ export class Input {
     if (this.split) raw.kb1 = kb;
     else { delete raw.kb2; raw.kb = kb; }
 
+    // Online guests: presses that came and went between two polls still count once.
+    for (const [id, st] of this.remote) {
+      raw[id] = st.acc;
+      st.acc = { ...st.held, start: false };
+    }
+
     const state = {};
     // when the keyboard is split or rejoined, a key still held must not count as a fresh press
     const pr = this.prevRaw;
@@ -110,6 +123,18 @@ export class Input {
   }
 
   get(id) { return this.state[id] || EMPTY; }
+
+  // A guest's input packet { x, y, a, m, u, s }: stick, attack, magic, turbo, start.
+  remoteInput(id, m) {
+    let st = this.remote.get(id);
+    if (!st) { st = { held: {}, acc: {} }; this.remote.set(id, st); }
+    const x = Math.max(-1, Math.min(1, +m.x || 0)), y = Math.max(-1, Math.min(1, +m.y || 0));
+    const held = { up: y < -0.5, down: y > 0.5, left: x < -0.5, right: x > 0.5, attack: !!m.a, magic: !!m.m, turbo: !!m.u, start: !!m.s, ax: x, ay: y };
+    const acc = { ...held };
+    for (const k of BUTTONS.concat('start')) acc[k] = !!(st.acc[k] || held[k]);
+    st.held = held;
+    st.acc = acc;
+  }
 
   sources() { return Object.keys(this.state); }
 

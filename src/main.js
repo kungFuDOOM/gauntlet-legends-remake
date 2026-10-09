@@ -5,9 +5,12 @@
 import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
-import { Tutorial } from './tutorial.js';
+import { Tutorial, tutorialView } from './tutorial.js';
 import { Game } from './game.js';
-import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say, stopVoice } from './audio.js';
+import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say, stopVoice, audioTap } from './audio.js';
+import { Host, Guest } from './net.js';
+import { SnapshotWriter, SnapshotReader, playSound } from './netstate.js';
+import { Lobby } from './lobby.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
 import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
@@ -43,12 +46,12 @@ input.touch = new TouchControls({
     // phones and tablets go fullscreen landscape; a touchscreen laptop stays as it is
     if (handheld && el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
   },
-  onMute: () => { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; },
+  onMute: () => { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5, local: true }; },
 });
 // Taps and clicks on the screen itself (not the on-screen buttons), in game coordinates.
 const taps = [];
 window.addEventListener('pointerdown', (e) => {
-  if (e.button > 0 || (e.target.closest && e.target.closest('.btn, #rotate'))) return;
+  if (e.button > 0 || (e.target.closest && e.target.closest('.btn, #rotate, #lobby, #lobby-btn, #online-bar'))) return;
   const r = stage.getBoundingClientRect();
   if (!r.width) return;
   taps.push({ x: (e.clientX - r.left) * VIEW_W / r.width, y: (e.clientY - r.top) * VIEW_H / r.height });
@@ -317,6 +320,148 @@ function updateRealmPick() {
   }
 }
 
+// ---------- online play ----------
+// One player hosts: their browser runs the game and streams it to up to three guests, whose
+// button presses come back as extra input sources ('net1', 'net2', ...) that join like
+// gamepads. Guests draw what the host sends. See net.js (connection) and netstate.js (state).
+
+let net = null; // host: { role, link, code, writer, fx, sendT } · guest: { role, link, code, me, reader, ui }
+const isNet = (src) => src.startsWith('net');
+const lobby = new Lobby({ onHost: hostOnline, onJoin: joinOnline, onLeave: () => leaveOnline('You left the online game.') });
+
+async function hostOnline() {
+  initAudio();
+  const link = new Host({
+    onJoin: (id) => {
+      input.remote.set(id, { held: {}, acc: {} });
+      sfx.join();
+      toast = { text: 'A friend connected! They press Attack to join in.', t: 3.5, local: true };
+    },
+    onLeave: (id) => dropGuest(id),
+    onInput: (id, m) => input.remoteInput(id, m),
+    onError: (text) => { toast = { text, t: 3, local: true }; },
+  });
+  try {
+    const code = await link.start();
+    net = { role: 'host', link, code, writer: new SnapshotWriter(), fx: [], sendT: 0 };
+    audioTap.fn = (ev) => { if (net && net.role === 'host' && net.link.count) net.fx.push(ev); };
+    toast = { text: `You're hosting! Room code: ${code}`, t: 5, local: true };
+  } catch (err) {
+    lobby.say(err.message);
+    link.close();
+  }
+}
+
+// An online guest disconnected: their hero leaves the party.
+function dropGuest(id) {
+  input.remote.delete(id);
+  const i = slots.findIndex((s) => s && s.source === id);
+  if (i >= 0) {
+    slots[i] = null;
+    countdown = null;
+    if (state === 'select' && !slots.some(Boolean)) setState('title');
+  }
+  if (game) for (const p of game.allPlayers()) if (p.source === id) game.players[p.slot] = undefined;
+  toast = { text: 'An online player left', t: 2.5 };
+}
+
+async function joinOnline(code) {
+  initAudio();
+  const link = new Guest({ onMessage: guestMessage, onClose: (reason) => leaveOnline(reason) });
+  try {
+    const me = await link.join(code);
+    net = { role: 'guest', link, code: code.toUpperCase(), me, reader: new SnapshotReader(Game), ui: {}, sendT: 0 };
+    Input.me = me;
+    game = null; tutorial = null; story = null; slots = [];
+    toast = { text: 'Connected! Press Attack to join the party.', t: 4, local: true };
+  } catch (err) {
+    lobby.say(err.message);
+    link.close();
+  }
+}
+
+function leaveOnline(reason) {
+  if (!net) return;
+  const was = net;
+  net = null;
+  was.link.close();
+  if (was.role === 'host') {
+    audioTap.fn = null;
+    for (const id of [...input.remote.keys()]) dropGuest(id);
+    if (game) game.fx = null;
+  } else {
+    game = null; story = null; tutorial = null; slots = [];
+    setState('title');
+  }
+  input.remote.clear();
+  Input.me = null;
+  if (reason) toast = { text: reason, t: 4, local: true };
+}
+
+// Host: about 20 times a second, send every guest the screen state and the game.
+function hostSend(dt) {
+  const live = net.link.count > 0;
+  if (game) game.fx = live ? game.fx || [] : null;
+  net.sendT -= dt;
+  if (!live || net.sendT > 0) return;
+  net.sendT = 0.05;
+  const fx = net.fx.concat(game && game.fx ? game.fx : []);
+  net.fx = [];
+  if (game && game.fx) game.fx = [];
+  const ui = {
+    slots, cd: countdown, rp: realmPick, shop, ci: clearInfo,
+    story: story && state === 'story' ? { lines: story.lines, idx: story.idx, t: story.t } : null,
+    toast: toast && !toast.local ? toast.text : null,
+    prog: save.progress, heroes: state === 'select' ? save.heroes : null,
+    tut: tutorial ? [tutorial.idx, tutorial.doneT > 0 ? 1 : 0] : null,
+  };
+  net.link.send({ t: 's', st: state, stT: Math.round(stateT * 100) / 100, ui, g: game ? net.writer.game(game) : null, fx });
+}
+
+// Guest: apply what the host sent.
+function guestMessage(m) {
+  if (!net || m.t !== 's') return;
+  // keep our own clock for the screen's animations; only resync when it drifts
+  if (state !== m.st || Math.abs(stateT - m.stT) > 0.5) stateT = m.stT;
+  state = m.st;
+  const ui = (net.ui = m.ui || {});
+  slots = ui.slots || [];
+  countdown = ui.cd;
+  realmPick = ui.rp;
+  shop = ui.shop || [];
+  clearInfo = ui.ci;
+  story = ui.story ? { ...ui.story, next() {} } : null;
+  if (ui.toast && ui.toast !== net.lastToast) toast = { text: ui.toast, t: 2.5, local: true };
+  net.lastToast = ui.toast;
+  game = net.reader.apply(m.g, m.fx);
+  if (!m.g) for (const ev of m.fx || []) playSound(ev);
+}
+
+// Guest: everything on this device (keys, touch, gamepad) drives this guest's one hero.
+function guestFrame(dt) {
+  let x = 0, y = 0, a = false, mg = false, u = false, st = false;
+  for (const s of Object.values(input.state)) {
+    if (!x && !y) { x = s.x; y = s.y; }
+    a = a || s.attack; mg = mg || s.magic; u = u || s.turbo; st = st || s.pressed.start;
+  }
+  // Esc backs out of menus and pauses during play, as it does for the host
+  const menu = ['select', 'story', 'realm', 'shop', 'gameover', 'confirm', 'levelclear'].includes(state);
+  if (input.key('Escape') || input.key('Backspace')) { if (menu) mg = true; else st = true; }
+  if (input.key('KeyP')) st = true;
+  // tapping the arrows on your own hero card
+  if (state === 'select') {
+    for (const t of taps) {
+      const hit = selectArrowAt(t.x, t.y);
+      if (hit && slots[hit.slot] && slots[hit.slot].source === net.me) x = hit.dir;
+    }
+  }
+  const pkt = { t: 'i', x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, a: a ? 1 : 0, m: mg ? 1 : 0, u: u ? 1 : 0, s: st ? 1 : 0 };
+  const key = `${pkt.x},${pkt.y},${pkt.a}${pkt.m}${pkt.u}${pkt.s}`;
+  net.sendT -= dt;
+  if (key !== net.lastPkt || net.sendT <= 0) { net.link.send(pkt); net.lastPkt = key; net.sendT = 0.1; }
+  if (net.reader.game) net.reader.tick(dt);
+}
+
 // ---------- playing ----------
 
 // When someone is swamped or nearly dead and still has a potion, remind them about magic
@@ -465,41 +610,50 @@ function currentTrack() {
 
 function render() {
   ctx.textBaseline = 'alphabetic';
+  // an online guest shows the host's quest
+  const guest = net && net.role === 'guest';
+  const progress = guest ? net.ui.prog || save.progress : save.progress;
+  const heroes = guest ? net.ui.heroes || {} : save.heroes;
   if (state === 'loading') {
     drawLoading(ctx, loadProgress, loadError);
   } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
     drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null);
+    if (guest) drawOverlay(ctx, `ROOM ${net.code}`, ['Connected! Waiting for the host to start...', `Press ${btn('attack')} to join the party`], '#8fe0ff');
     if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
     drawStory(ctx, story, stateT);
   } else if (state === 'select') {
     r3d.renderShowcase(selectShowcase(slots, stateT), stateT);
-    drawSelect(ctx, stateT, slots, countdown, save.heroes);
+    drawSelect(ctx, stateT, slots, countdown, heroes);
   } else if (state === 'shop') {
     r3d.render(game);
     drawShop(ctx, stateT, game, shop);
   } else if (state === 'realm') {
     r3d.render(game);
-    drawGameOverlay(ctx, game, r3d, { runes: runeCount(save.progress), hubPrompt: false });
-    drawRealmPick(ctx, stateT, save.progress, realmPick);
+    drawGameOverlay(ctx, game, r3d, { runes: runeCount(progress), hubPrompt: false });
+    drawRealmPick(ctx, stateT, progress, realmPick);
   } else if (state === 'ending') {
     r3d.renderShowcase(partyShowcase(game, stateT, true, true), stateT);
-    drawEnding(ctx, stateT, game, save.progress);
+    drawEnding(ctx, stateT, game, progress);
   } else if (game) {
     r3d.render(game);
     drawGameOverlay(ctx, game, r3d, {
       minimap: showMinimap && !game.level.hub && !game.level.tutorial,
-      runes: game.level.tutorial ? null : runeCount(save.progress) + game.runesFound.length,
-      tutorial: game.level.tutorial && tutorial ? tutorial.view(btn, input.lastDevice) : null,
+      runes: game.level.tutorial ? null : runeCount(progress) + game.runesFound.length,
+      tutorial: !game.level.tutorial ? null
+        : tutorial ? tutorial.view(btn, input.lastDevice)
+          : guest && net.ui.tut ? tutorialView(net.ui.tut[0], !!net.ui.tut[1], btn, input.lastDevice) : null,
       controls: showControls && input.lastDevice !== 'touch' && state === 'play',
     });
     if (state === 'paused') {
       const resume = { touch: 'Tap II to resume', pad: 'Press Start to resume', keys: 'Press Esc to resume' }[input.lastDevice];
       const quit = input.lastDevice === 'keys' ? 'Q' : btn('magic');
-      const lines = [resume, game.level.tutorial ? `${quit}: skip the training` : `${quit}: save and quit to title`];
-      if (game.level.hub && input.lastDevice === 'keys') lines.push('T: replay the training');
+      const lines = [resume];
+      if (guest) lines.push('(only the host can quit)');
+      else lines.push(game.level.tutorial ? `${quit}: skip the training` : `${quit}: save and quit to title`);
+      if (game.level.hub && input.lastDevice === 'keys' && !guest) lines.push('T: replay the training');
       if (input.lastDevice === 'keys') lines.push('M: mute   N: music   V: announcer   TAB: map   X: pixel size');
       drawOverlay(ctx, 'PAUSED', [...lines, `${game.info.stageName} — ${game.theme.name}`]);
     } else if (state === 'levelclear') {
@@ -507,7 +661,7 @@ function render() {
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, '']
         : [`${clearInfo.name} complete`, clearInfo.newRunes ? 'You recovered a hidden Rune Stone!' : clearInfo.hidden ? 'A hidden Rune Stone lies somewhere in this level...' : '', ''];
       for (const p of game.allPlayers()) lines.push(`${p.name}: level ${p.lvl} · ${p.gold} gold`);
-      lines.push('', `Rune Stones: ${runeCount(save.progress)} / ${TOTAL_RUNES}`);
+      lines.push('', `Rune Stones: ${runeCount(progress)} / ${TOTAL_RUNES}`);
       for (const c of clearInfo.unlocked || []) lines.push(`SECRET HERO UNLOCKED: ${c.toUpperCase()}!`);
       if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? `Press ${btn('attack')} to enter the Treasure Room!` : `Press ${btn('attack')} to return to the hub`);
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
@@ -535,22 +689,29 @@ function frame(now) {
   input.poll();
   setDevice(input.lastDevice);
 
-  if (input.key('KeyM')) { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5 }; }
+  if (input.key('KeyM')) { initAudio(); toast = { text: toggleMute() ? 'Sound OFF' : 'Sound ON', t: 1.5, local: true }; }
   if (input.key('Tab')) showMinimap = !showMinimap;
   if (input.key('KeyH')) {
     showControls = !showControls;
-    toast = { text: showControls ? 'Controls shown' : 'Controls hidden (H to show)', t: 1.5 };
+    toast = { text: showControls ? 'Controls shown' : 'Controls hidden (H to show)', t: 1.5, local: true };
     try { localStorage.setItem('gl-remake-controls', showControls ? 'on' : 'off'); } catch { /* storage unavailable */ }
   }
   if (input.key('KeyX')) {
     const level = (r3d.pixelLevel + 1) % 3;
-    toast = { text: r3d.setPixelation(level), t: 1.5 };
+    toast = { text: r3d.setPixelation(level), t: 1.5, local: true };
     try { localStorage.setItem('gl-remake-pixels', String(level)); } catch { /* storage unavailable */ }
   }
-  if (input.key('KeyV')) { toast = { text: toggleVoice() ? 'Announcer ON' : 'Announcer OFF', t: 1.5 }; }
-  if (input.key('KeyN')) { initAudio(); toast = { text: toggleMusic() ? 'Music ON' : 'Music OFF', t: 1.5 }; }
+  if (input.key('KeyV')) { toast = { text: toggleVoice() ? 'Announcer ON' : 'Announcer OFF', t: 1.5, local: true }; }
+  if (input.key('KeyN')) { initAudio(); toast = { text: toggleMusic() ? 'Music ON' : 'Music OFF', t: 1.5, local: true }; }
   playMusic(currentTrack());
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
+  lobby.update(state, net && { role: net.role, code: net.code, players: net.role === 'host' ? net.link.count : 0 });
+  if (net && net.role === 'guest') {
+    guestFrame(dt);
+    taps.length = 0;
+    render();
+    return;
+  }
 
   switch (state) {
     case 'title': updateTitle(); break;
@@ -564,7 +725,8 @@ function frame(now) {
     case 'paused':
       if (input.key('Escape') || input.key('KeyP') || input.anyStart()) setState('play');
       // quit: Q on the keyboard (Esc resumes), B on a gamepad, MAGIC on the touch screen
-      else if (input.key('KeyQ') || partySources().some((src) => !isKb(src) && input.get(src).pressed.magic) || (input.lastDevice === 'touch' && partyPressed('magic'))) {
+      // (online guests can pause and resume, but only the host's own players can quit)
+      else if (input.key('KeyQ') || partySources().some((src) => !isNet(src) && (!isKb(src) || input.lastDevice === 'touch') && input.get(src).pressed.magic)) {
         if (game.level.tutorial) finishTutorial(true);
         else { persist(); game = null; setState('title'); }
       } else if (input.key('KeyT') && game.level.hub) startTutorial();
@@ -572,6 +734,7 @@ function frame(now) {
     case 'levelclear': updateLevelClear(); break;
     case 'gameover': updateGameOver(); break;
   }
+  if (net && net.role === 'host') hostSend(dt);
   taps.length = 0;
   render();
 }
@@ -586,7 +749,7 @@ function loop(now) {
 }
 
 // Debug/test hook (used by automated smoke tests).
-window.__gl = { get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; } };
+window.__gl = { get net() { return net; }, get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; } };
 
 // Scale canvas to fit window while keeping aspect ratio.
 function fit() {

@@ -457,6 +457,7 @@ let device = 'keys';
 export function setDevice(d) { device = d; }
 export function btn(name, source = device) {
   let src = source === 'keys' ? 'kb' : source;
+  if (src.startsWith('net')) src = device === 'keys' ? 'kb' : device; // an online player: name this screen's own buttons
   if (src.startsWith('pad')) src = 'pad';
   if (src === 'kb' && document.body.classList.contains('touching') && device === 'touch') src = 'touch';
   return BUTTON_NAMES[name][src];

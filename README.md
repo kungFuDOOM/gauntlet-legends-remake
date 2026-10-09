@@ -2,7 +2,7 @@
 
 A fan-made remake of the 1998 arcade classic **Gauntlet Legends** that runs in the browser in 3D. Like the original, it has a 3/4 overhead camera that follows the party through torch-lit 3D dungeons, low-poly heroes and monsters, and stat panels in the corners of the screen.
 
-It is plain JavaScript with no build step. The only library is [three.js](https://threejs.org), included in `vendor/` (MIT licensed).
+It is plain JavaScript with no build step. The libraries are [three.js](https://threejs.org) and, for online play, [PeerJS](https://peerjs.com), both included in `vendor/` (MIT licensed).
 
 The **heroes** are original models built in code (`src/heroes.js`) in the style of the arcade era: adult proportions, smooth low-poly limbs and bold costumes, attached to an animated rig. The **monsters and dungeon** are animated 3D models from Kay Lousberg's free **CC0** KayKit packs (see [`assets/CREDITS.md`](assets/CREDITS.md)). A few things the packs don't cover (three of the bosses, magic pickups, effects) are built in code. Sounds are synthesized. None of the original game's art, models, audio or levels are used.
 
@@ -46,6 +46,21 @@ To keep the repository private instead, connect it to a free static host such as
 Up to **4 players** can play co-op on one screen. On your own, every key above (and the touch screen, if you have one) controls your hero. Gamepads join by pressing Attack, even in the middle of a level. For two players on one keyboard, press **2**: player 1 keeps WASD and player 2 gets the arrow keys.
 
 **New here?** The first time you play, your party starts in the **Training Grounds**: eight short rooms that teach moving, attacking, generators, keys and doors, magic, turbo attacks and food, naming the right buttons for your keyboard, gamepad or touch screen. You can't die there, and you can skip it from the pause menu. To replay it later, pause in the hub and press `T`.
+
+## Play online
+
+Friends can join your game over the internet, on PCs or phones, up to 4 players in all.
+
+1. **Host:** on the title screen, press **🌐 PLAY ONLINE**, then **Host a game**. You get a 4-letter room code (it stays at the bottom of the screen on menus). Start the game as usual.
+2. **Friends:** open the same site, press **🌐 PLAY ONLINE**, type the code and press **Join**. On the hero select screen (or at any time during play) they press Attack to jump in, just like a gamepad player.
+
+How it works: the host's browser runs the game and streams it to the guests about 20 times a second; guests send back their button presses. Players connect directly to each other (WebRTC), using the free public [PeerJS](https://peerjs.com) server only to find each other, so there's nothing to host or pay for. Good to know:
+
+- The campaign (Rune Stones, unlocked stages, saved heroes) is the host's. Guests can pause and resume, but only the host can quit; if the host leaves, the game ends for everyone.
+- Guests see their own hero with a little delay (about the time a message takes to reach the host and back).
+- A few strict networks (some school, office or mobile-carrier connections) block direct connections between players. If joining fails there, try another network or a phone hotspot.
+- Everyone needs the same version of the game: after an update, both host and guests should refresh the page.
+- To use your own matchmaking server instead of the public one (for example when you have your own site), run the [PeerJS server](https://github.com/peers/peerjs-server) and open the game with `?peer=yourserver:port`, or replace `src/net.js` with your own connection code: the rest of the game only uses its `Host` and `Guest` classes.
 
 ## The quest
 
@@ -104,15 +119,18 @@ src/render3d.js   three.js renderer: builds level geometry from the tile map, li
 src/assets.js     loads the KayKit models; Actor = animated character with separate upper/lower-body actions
 src/models.js     procedural models for the Dragon, Chimera and Plague Fiend, magic pickups, effects
 src/hud.js        2D overlay: corner player panels, floating text, banners, menus
-vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder (MIT)
+vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder, PeerJS (all MIT)
 assets/models/    CC0 KayKit models, prepared by tools/build-assets.mjs
 assets/voice/     announcer recordings, made by tools/voice-lines.mjs + tools/build-voice.py
 src/input.js      keyboard, gamepad and touch input sources
 src/touch.js      on-screen controls for phones and tablets
 src/tutorial.js   the Training Grounds lessons
+src/net.js        online play: hosting and joining by room code (PeerJS / WebRTC)
+src/netstate.js   online play: packing the game into snapshots and mirroring them on guests
+src/lobby.js      online play: the PLAY ONLINE panel and the room bar
 src/audio.js      synthesized sound effects, music and the announcer
 src/config.js     tuning tables for classes, enemies and power-ups
-test/             node:test suite (level generation and solvability)
+test/             node:test suite (level generation and solvability, online snapshots)
 ```
 
 ## Rebuilding the 3D assets
@@ -136,8 +154,7 @@ npm test
 
 ## Ideas for next steps
 
-- More enemy types and per-realm enemy variety; traps, teleporters and secret walls
+- More enemy types and per-realm enemy variety; teleporters
 - Unique layouts for each boss and multiple attack phases
-- Character unlocks (the hidden Legends characters), stat allocation on level-up and a save system
-- Background music
-- Online co-op
+- Stat allocation on level-up
+- Online play: guests' own saved heroes, smoother movement for guests (predicting their own hero locally), reconnecting after a dropped connection, and a dedicated server so the host leaving doesn't end the game

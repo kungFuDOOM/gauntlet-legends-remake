@@ -104,6 +104,14 @@ export const sfx = {
   boss() { tone(70, 1.2, { type: 'sawtooth', vol: 0.25, slide: 40 }); noise(1.2, { vol: 0.2, freq: 300 }); },
 };
 
+// When hosting online, every sound effect and announcer line is also handed to audioTap.fn
+// so it can be replayed on the guests' machines.
+export const audioTap = { fn: null };
+for (const k of Object.keys(sfx)) {
+  const play = sfx[k];
+  sfx[k] = (...args) => { if (audioTap.fn) audioTap.fn(['a', k, ...args]); return play(...args); };
+}
+
 // ---------- the announcer ----------
 // Lines are pre-recorded with a neural voice (assets/voice, made by tools/build-voice.py)
 // and played through Web Audio. Anything without a recording uses the browser's speech
@@ -163,6 +171,7 @@ function browserVoice() {
 
 const lastSaid = {};
 export function say(text, key = text, cooldown = 8000) {
+  if (audioTap.fn) audioTap.fn(['v', text, key, cooldown]);
   if (muted || !voiceOn) return;
   const now = performance.now();
   if (lastSaid[key] && now - lastSaid[key] < cooldown) return;

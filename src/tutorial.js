@@ -122,8 +122,11 @@ export class Tutorial {
   }
 
   // what the HUD shows: { n, of, title, text, done }
-  view(b, dev) {
-    const st = this.step;
-    return { n: this.idx + 1, of: STEPS.length, title: st.title, text: st.text(b, dev), done: this.doneT > 0 };
-  }
+  view(b, dev) { return tutorialView(this.idx, this.doneT > 0, b, dev); }
+}
+
+// The lesson box for step `idx` (also used by online guests, who only get the step number).
+export function tutorialView(idx, done, b, dev) {
+  const st = STEPS[Math.max(0, Math.min(STEPS.length - 1, idx))];
+  return { n: idx + 1, of: STEPS.length, title: st.title, text: st.text(b, dev), done };
 }

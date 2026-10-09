@@ -18,6 +18,8 @@ export class Game {
     this.levelNum = 1;
     this.time = 0;
     this.stats = { magic: 0, turbo: 0, food: 0 }; // things the tutorial waits for
+    this.fx = null;       // when hosting online: effects to forward to guests (see net.js)
+    this.levelSeq = 0;    // counts level loads, so guests notice even a restart of the same level
   }
 
   // ---------- setup ----------
@@ -66,13 +68,13 @@ export class Game {
 
   startLevel(n) {
     this.levelNum = n;
-    this.loadLevel(generateLevel(n));
+    this.loadLevel(generateLevel(n), `L${n}`);
   }
 
   // The hub: realm portals and the merchant. `fromRealm` puts the party by that portal.
   startHub(fromRealm = null) {
     this.levelNum = 0;
-    this.loadLevel(generateHub());
+    this.loadLevel(generateHub(), 'H');
     this.hubFocus = null;
     if (fromRealm != null) {
       const pt = this.level.portals[fromRealm];
@@ -96,7 +98,7 @@ export class Game {
   // The Training Grounds: src/tutorial.js drives the lessons.
   startTutorial() {
     this.levelNum = 0;
-    this.loadLevel(generateTutorial());
+    this.loadLevel(generateTutorial(), 'U');
   }
 
   addGenerator(type, tx, ty) {
@@ -108,16 +110,28 @@ export class Game {
 
   // Timed bonus round full of gold, no monsters, no health drain.
   startTreasure(realm) {
-    this.loadLevel(generateTreasureRoom(realm));
+    this.loadLevel(generateTreasureRoom(realm), `T${realm}`);
     this.treasureT = 25;
     this.banner = { text: 'Treasure Room!', sub: 'Grab all the gold you can', t: 2.5 };
     say('Treasure room! Collect the gold!', 'treasure', 2000);
   }
 
-  loadLevel(L) {
+  // Online guests rebuild the same level from its key (levels are generated
+  // deterministically) and get everything in it from the host's snapshots.
+  loadMirror(key) {
+    const L = key === 'H' ? generateHub() : key === 'U' ? generateTutorial()
+      : key[0] === 'T' ? generateTreasureRoom(Number(key.slice(1))) : generateLevel(Number(key.slice(1)));
+    if (key[0] === 'L') this.levelNum = Number(key.slice(1));
+    this.setLevel(L, key);
+  }
+
+  setLevel(L, key) {
     this.treasureT = 0;
     this.level = L;
+    this.levelKey = key;
+    this.levelSeq++;
     this.w = L.w; this.h = L.h; this.tiles = L.tiles;
+    this.tiles0 = L.tiles.slice(); // as generated, to send guests only what changed
     this.theme = L.info.theme;
     this.info = L.info;
     this.explored = new Uint8Array(L.w * L.h);
@@ -127,6 +141,10 @@ export class Game {
     this.crackHp = new Map(); this.runesFound = [];
     this.refreshDifficulty();
     this.banner = { text: L.info.stageName, sub: L.info.theme.name, t: 3.5 };
+  }
+
+  loadLevel(L, key = 'L0') {
+    this.setLevel(L, key);
 
     const c = (tx) => tx * TILE + TILE / 2;
     for (const it of L.items) this.items.push({ type: it.type, sub: it.sub, x: c(it.x), y: c(it.y), r: 10, bob: Math.random() * 6 });
@@ -321,16 +339,21 @@ export class Game {
   // ---------- effects ----------
 
   particle(x, y, vx, vy, color, life = 0.5, size = 3) {
+    if (this.fx && !this.fxQuiet) this.fx.push(['p', Math.round(x), Math.round(y), Math.round(vx), Math.round(vy), color, +life.toFixed(2), +size.toFixed(1)]);
     if (this.particles.length > 600) return;
     this.particles.push({ x, y, vx, vy, color, life, max: life, size });
   }
   burst(x, y, color, n = 10, speed = 120) {
+    if (this.fx) this.fx.push(['b', Math.round(x), Math.round(y), color, n, speed]);
+    this.fxQuiet = true; // guests make the burst's particles themselves
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2, s = rand(speed * 0.3, speed);
       this.particle(x, y, Math.cos(a) * s, Math.sin(a) * s, color, rand(0.3, 0.7), rand(2, 4));
     }
+    this.fxQuiet = false;
   }
   text(x, y, text, color = '#fff', life = 1.2) {
+    if (this.fx) this.fx.push(['t', Math.round(x), Math.round(y), text, color, life]);
     this.texts.push({ x, y, text, color, life, max: life });
   }
 
