@@ -30,6 +30,8 @@ The game is plain static files, so GitHub Pages can host it as-is:
 2. *Settings → Pages*: set **Source** to *Deploy from a branch*, pick the branch with the game and the **/ (root)** folder, and save.
 3. After a minute or two the game is live at `https://<your-username>.github.io/<repo-name>/`.
 
+After you push an update, players get it on their next refresh: a small service worker (`sw.js`) makes browsers check for newer game code instead of reusing their cached copy for up to 10 minutes (the very first visit after this was added may still need one extra refresh).
+
 To keep the repository private instead, connect it to a free static host such as Cloudflare Pages or Netlify (no build command; output directory is the repository root).
 
 ## Controls
@@ -110,6 +112,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 
 ```
 index.html        canvas + module entry
+sw.js             service worker: always loads the newest game code after an update
 server.js         zero-dependency static server (npm start)
 src/main.js       game loop and state machine (title, hero select, play, pause, level clear, game over)
 src/game.js       simulation: players, enemies and their AI, generators, projectiles, pickups, traps

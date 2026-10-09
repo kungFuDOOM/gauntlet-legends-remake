@@ -29,6 +29,10 @@
     <canvas id="hud"></canvas>
   </div>
   <div id="error">This game needs WebGL. Please use a recent browser with hardware acceleration enabled.</div>
+  <script>
+    // always load the newest version of the game after an update (see sw.js)
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>
