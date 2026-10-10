@@ -2,3 +2,15 @@ node_modules/
 kaykit/
 .DS_Store
 *.log
+
+# never commit secrets (API keys, passwords, certificates)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets.*
+credentials.*
