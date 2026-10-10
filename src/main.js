@@ -13,7 +13,7 @@ import { SnapshotWriter, SnapshotReader, playSound, cleanUi, cleanEvents, cleanG
 import { Lobby } from './lobby.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, shopItemAt, realmStageAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
 
@@ -314,10 +314,19 @@ function updateHubActions() {
 }
 
 function updateRealmPick() {
+  // tapping a stage picks it, tapping it again enters
+  let enter = false;
+  for (const t of taps) {
+    const s = realmStageAt(t.x, t.y);
+    if (!s) continue;
+    initAudio();
+    if (s === realmPick.stage) enter = true;
+    else { realmPick.stage = s; sfx.select(); }
+  }
   if (partyPressed('up')) { realmPick.stage = Math.max(1, realmPick.stage - 1); sfx.select(); }
   if (partyPressed('down')) { realmPick.stage = Math.min(4, realmPick.stage + 1); sfx.select(); }
   if (partyBack()) { setState('play'); return; }
-  if (partyPressed('attack')) {
+  if (enter || partyPressed('attack')) {
     const { realm, stage } = realmPick;
     if (!isUnlocked(save.progress, realm, stage)) { sfx.hurt(); toast = { text: 'Clear the previous stage first', t: 1.8 }; return; }
     const go = () => {
@@ -509,6 +518,27 @@ function guestFrame(dt) {
       if (hit && slots[hit.slot] && slots[hit.slot].source === net.me) x = hit.dir;
     }
   }
+  // tapping a stage at a portal: the same, for the party's shared choice
+  if (state === 'realm' && realmPick) {
+    for (const t of taps) {
+      const s = realmStageAt(t.x, t.y);
+      if (!s) continue;
+      if (s === realmPick.stage) a = true;
+      else { x = 0; y = s < realmPick.stage ? -1 : 1; }
+    }
+  }
+  // tapping in the shop: a tap on your chosen item buys it, a tap on another steps toward it
+  if (state === 'shop' && game) {
+    const ps = game.allPlayers();
+    for (const t of taps) {
+      const hit = shopItemAt(t.x, t.y, ps.length);
+      const p = hit && ps[hit.i];
+      const c = p && p.source === net.me && shop && shop[p.slot];
+      if (!c || c.done) continue;
+      if (c.idx === hit.k) a = true;
+      else { x = 0; y = hit.k < c.idx ? -1 : 1; }
+    }
+  }
   const pkt = { t: 'i', x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, a: a ? 1 : 0, m: mg ? 1 : 0, u: u ? 1 : 0, s: st ? 1 : 0 };
   const key = `${pkt.x},${pkt.y},${pkt.a}${pkt.m}${pkt.u}${pkt.s}`;
   net.sendT -= dt;
@@ -626,23 +656,38 @@ function updateLevelClear() {
 
 function updateShop() {
   let allDone = true;
-  for (const p of game.allPlayers()) {
+  const ps = game.allPlayers();
+  // tapping an item picks it, tapping it again buys it (touch screens, this device's heroes)
+  for (const t of taps) {
+    const hit = shopItemAt(t.x, t.y, ps.length);
+    const p = hit && ps[hit.i];
+    const c = p && !isNet(p.source) && shop[p.slot];
+    if (!c || c.done) continue;
+    initAudio();
+    if (c.idx === hit.k) shopBuy(p, c);
+    else { c.idx = hit.k; sfx.select(); }
+  }
+  for (const p of ps) {
     const c = shop[p.slot] || (shop[p.slot] = { idx: 0, done: false });
     const inp = input.get(p.source);
     if (!c.done) {
       if (inp.pressed.up) { c.idx = (c.idx + SHOP.length - 1) % SHOP.length; sfx.select(); }
       if (inp.pressed.down) { c.idx = (c.idx + 1) % SHOP.length; sfx.select(); }
-      if (inp.pressed.attack) {
-        const item = SHOP[c.idx];
-        if (item.id === 'done') { c.done = true; sfx.join(); }
-        else if (buy(p, item)) { sfx.gold(); c.flash = 0.4; }
-        else { sfx.hurt(); c.deny = 0.4; }
-      }
+      // a solo hero's shop has two columns: left/right hop between them
+      if (ps.length === 1 && (inp.pressed.left || inp.pressed.right)) { c.idx = (c.idx + SHOP.length / 2) % SHOP.length; sfx.select(); }
+      if (inp.pressed.attack) shopBuy(p, c);
       if (backPressed(p.source)) { c.done = true; sfx.join(); }
     } else if (backPressed(p.source)) c.done = false;
     allDone = allDone && c.done;
   }
   if (allDone && stateT > 0.5) { persist(); setState('play'); }
+}
+
+function shopBuy(p, c) {
+  const item = SHOP[c.idx];
+  if (item.id === 'done') { c.done = true; sfx.join(); }
+  else if (buy(p, item)) { sfx.gold(); c.flash = 0.4; }
+  else { sfx.hurt(); c.deny = 0.4; }
 }
 
 function updateGameOver() {

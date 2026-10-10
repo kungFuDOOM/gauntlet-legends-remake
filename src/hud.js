@@ -629,8 +629,16 @@ export function drawOverlay(ctx, title, lines, accent = '#f2c14e') {
   ctx.textAlign = 'center';
   ctx.font = `bold 52px ${SERIF}`;
   outlined(ctx, title, VIEW_W / 2, 230, accent, '#000', 7);
-  ctx.font = `17px ${SANS}`;
-  lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 284 + i * 28, '#f0e6d0', '#000', 3));
+  // as large as fits, so the lines stay readable on a phone
+  let size = 23;
+  ctx.font = `${size}px ${SANS}`;
+  const widest = Math.max(0, ...lines.map((l) => ctx.measureText(l).width));
+  if (widest > VIEW_W - 60) size = Math.floor(size * (VIEW_W - 60) / widest);
+  if (lines.length > 1) size = Math.min(size, Math.floor(316 / (lines.length - 1) / 1.55)); // last line by y 600
+  size = Math.max(15, size);
+  ctx.font = `${size}px ${SANS}`;
+  const gap = Math.round(size * 1.55);
+  lines.forEach((l, i) => outlined(ctx, l, VIEW_W / 2, 284 + i * gap, '#f0e6d0', '#000', 3));
 }
 
 // ---------- quest screens ----------
@@ -725,18 +733,36 @@ const STAGE_NAMES = [
 ];
 
 // Stage picker shown when the party steps onto a realm portal in the hub.
+// It's drawn at 1.3x around the screen centre so it stays readable on a phone.
+const RP_W = 300, RP_H = 372, RP_X = (VIEW_W - RP_W) / 2, RP_Y = 120, RP_SCALE = 1.3;
+const rpRow = (s) => ({ x: RP_X + 12, y: RP_Y + 56 + (s - 1) * 76, w: RP_W - 24, h: 66 });
+
+// Which stage (1-4) a tap at (x, y) lands on, or 0.
+export function realmStageAt(x, y) {
+  const ux = VIEW_W / 2 + (x - VIEW_W / 2) / RP_SCALE, uy = VIEW_H / 2 + (y - VIEW_H / 2) / RP_SCALE;
+  for (let s = 1; s <= 4; s++) {
+    const r = rpRow(s);
+    if (ux >= r.x && ux <= r.x + r.w && uy >= r.y - 5 && uy <= r.y + r.h + 5) return s;
+  }
+  return 0;
+}
+
 export function drawRealmPick(ctx, time, progress, pick) {
   const r = pick.realm;
-  const cw = 300, ch = 372, x = (VIEW_W - cw) / 2, y0 = 120;
+  const cw = RP_W, ch = RP_H, x = RP_X, y0 = RP_Y;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.save();
+  ctx.translate(VIEW_W / 2, VIEW_H / 2);
+  ctx.scale(RP_SCALE, RP_SCALE);
+  ctx.translate(-VIEW_W / 2, -VIEW_H / 2);
   frame(ctx, x, y0, cw, ch, REALM_COLORS[r]);
   ctx.textAlign = 'center';
   ctx.font = `italic bold 24px ${SERIF}`;
   outlined(ctx, REALM_NAMES[r], VIEW_W / 2, y0 + 36, REALM_COLORS[r], '#000', 4);
   for (let s = 1; s <= 4; s++) {
     const n = r * 4 + s;
-    const sy = y0 + 56 + (s - 1) * 76;
+    const sy = rpRow(s).y;
     const open = s === 1 || progress.completed[n - 1];
     const done = !!progress.completed[n];
     const here = pick.stage === s;
@@ -755,7 +781,9 @@ export function drawRealmPick(ctx, time, progress, pick) {
   }
   ctx.textAlign = 'center';
   ctx.font = `13px ${SANS}`;
-  outlined(ctx, `Up/Down: choose     ${btn('attack')}: enter     ${btn('back')}: back`, VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
+  const help = device === 'touch' ? `Tap a stage, tap again to enter     ${btn('back')}: back` : `Up/Down: choose     ${btn('attack')}: enter     ${btn('back')}: back`;
+  outlined(ctx, help, VIEW_W / 2, y0 + ch + 24, '#e0d4b8', '#000', 3);
+  ctx.restore();
 }
 
 // Labels over the hub's portals and merchant, and a prompt when someone stands at one.
@@ -779,59 +807,106 @@ function drawHubLabels(ctx, g, r3d, prompt = true) {
   }
 }
 
-const SHOP_W = 222, SHOP_GAP = 10, SHOP_X0 = (VIEW_W - (SHOP_W * 4 + SHOP_GAP * 3)) / 2;
+// Shop panels, sized for the party: a solo hero gets one big two-column panel (readable on a
+// phone, where this whole screen is shrunk to fit), two or three heroes get large columns, and
+// four share the screen at the normal size. Items run top to bottom, then on to the next column.
+const SHOP_TOP = 90, SHOP_BOTTOM = 584; // (room below for the online bar)
+function shopLayout(n, i) {
+  // with touch controls on screen, keep clear of the buttons down the right side
+  const touch = document.body.classList.contains('touching');
+  const left = touch ? 16 : 40, right = touch ? 816 : VIEW_W - 40;
+  if (n <= 1) return { x: left, y: SHOP_TOP, w: right - left, h: SHOP_BOTTOM - SHOP_TOP, cols: 2, top: 60, rowH: 86, gap: 8, pad: 22, f: 1.85, wide: true };
+  const gap = 10, room = touch ? right - left : VIEW_W - 30, w = Math.min(440, (room - gap * (n - 1)) / n);
+  const f = Math.min((SHOP_BOTTOM - SHOP_TOP) / 410, w / 222);
+  const x0 = (touch ? left : (VIEW_W - room) / 2) + (room - (w * n + gap * (n - 1))) / 2;
+  return { x: x0 + i * (w + gap), y: SHOP_TOP, w, h: 410 * f, cols: 1, top: 62 * f, rowH: 34 * f, gap: 6 * f, pad: 10 * f, f };
+}
+
+function shopRow(L, k) {
+  const per = Math.ceil(SHOP.length / L.cols);
+  const col = Math.floor(k / per), row = k % per;
+  const cw = (L.w - L.pad * 2 - L.gap * (L.cols - 1)) / L.cols;
+  return { x: L.x + L.pad + col * (cw + L.gap), y: L.y + L.top + row * (L.rowH + L.gap), w: cw, h: L.rowH };
+}
+
+// Which panel and item a tap at (x, y) lands on, or null.
+export function shopItemAt(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const L = shopLayout(n, i);
+    for (let k = 0; k < SHOP.length; k++) {
+      const r = shopRow(L, k);
+      if (x >= r.x && x <= r.x + r.w && y >= r.y - L.gap / 2 && y <= r.y + r.h + L.gap / 2) return { i, k };
+    }
+  }
+  return null;
+}
 
 export function drawShop(ctx, time, g, cursors) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   ctx.fillStyle = 'rgba(6,4,2,0.5)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  const cx = document.body.classList.contains('touching') ? 416 : VIEW_W / 2; // over the panels
   ctx.textAlign = 'center';
   ctx.font = `bold 36px ${SERIF}`;
   const tg = ctx.createLinearGradient(0, 30, 0, 70);
   tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
-  outlined(ctx, "THE MERCHANT'S STALL", VIEW_W / 2, 56, tg, '#1a0a00', 6);
-  ctx.font = `13px ${SANS}`;
-  outlined(ctx, `Up/Down: browse   ${btn('attack')}: buy   ${btn('back')}: done   (everyone must finish)`, VIEW_W / 2, 80, '#e0d4b8', '#000', 3);
+  outlined(ctx, "THE MERCHANT'S STALL", cx, 52, tg, '#1a0a00', 6);
+  ctx.font = `bold 16px ${SANS}`;
+  const help = device === 'touch'
+    ? `Tap an item, tap again to buy   ${btn('back')}: done   (everyone must finish)`
+    : `Up/Down: browse   ${btn('attack')}: buy   ${btn('back')}: done   (everyone must finish)`;
+  outlined(ctx, help, cx, 78, '#e0d4b8', '#000', 3);
   const ps = g.allPlayers();
   const n = ps.length;
-  const x0 = (VIEW_W - (SHOP_W * n + SHOP_GAP * (n - 1))) / 2;
   ps.forEach((p, i) => {
     const c = cursors[p.slot] || { idx: 0 };
-    const x = x0 + i * (SHOP_W + SHOP_GAP), y = 96;
-    frame(ctx, x, y, SHOP_W, 410, p.def.color);
-    ctx.font = `italic bold 17px ${SERIF}`;
-    outlined(ctx, `${p.name.toUpperCase()}  LV${p.lvl}`, x + SHOP_W / 2, y + 26, p.def.color, '#000', 4);
-    ctx.font = `bold 16px ${SANS}`;
-    outlined(ctx, `${p.gold} GOLD`, x + SHOP_W / 2, y + 48, c.deny > 0 ? '#ff5040' : '#ffd860', '#000', 3);
+    const L = shopLayout(n, i), f = L.f, { x, y } = L;
+    frame(ctx, x, y, L.w, L.h, p.def.color);
+    const gold = `${p.gold} GOLD`, goldColor = c.deny > 0 ? '#ff5040' : '#ffd860';
+    if (L.wide) {
+      ctx.textAlign = 'left';
+      ctx.font = `italic bold 28px ${SERIF}`;
+      outlined(ctx, `${p.name.toUpperCase()}  LV${p.lvl}`, x + L.pad + 6, y + 40, p.def.color, '#000', 4);
+      ctx.textAlign = 'right';
+      ctx.font = `bold 28px ${SANS}`;
+      outlined(ctx, gold, x + L.w - L.pad - 6, y + 40, goldColor, '#000', 4);
+    } else {
+      ctx.textAlign = 'center';
+      ctx.font = `italic bold ${17 * f}px ${SERIF}`;
+      outlined(ctx, `${p.name.toUpperCase()}  LV${p.lvl}`, x + L.w / 2, y + 26 * f, p.def.color, '#000', 4);
+      ctx.font = `bold ${16 * f}px ${SANS}`;
+      outlined(ctx, gold, x + L.w / 2, y + 48 * f, goldColor, '#000', 3);
+    }
     SHOP.forEach((item, k) => {
-      const iy = y + 62 + k * 40;
+      const r = shopRow(L, k);
       const here = c.idx === k && !c.done;
       const cost = priceOf(p, item);
       const afford = item.id === 'done' || p.gold >= cost;
       ctx.fillStyle = here ? 'rgba(255,220,140,0.25)' : 'rgba(0,0,0,0.3)';
-      roundRect(ctx, x + 10, iy, SHOP_W - 20, 34, 5);
+      roundRect(ctx, r.x, r.y, r.w, r.h, 5 * f);
       ctx.fill();
-      if (here) { ctx.strokeStyle = '#ffe080'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1; }
+      if (here) { ctx.strokeStyle = '#ffe080'; ctx.lineWidth = 2 * Math.min(f, 1.5); ctx.stroke(); ctx.lineWidth = 1; }
       ctx.textAlign = 'left';
-      ctx.font = `bold 13px ${SANS}`;
-      outlined(ctx, item.name, x + 18, iy + 15, afford ? '#f4ead0' : '#8a7a68', '#000', 3);
-      ctx.font = `10px ${SANS}`;
-      outlined(ctx, item.desc, x + 18, iy + 28, '#b8a888', '#000', 2);
+      ctx.font = `bold ${13 * f}px ${SANS}`;
+      outlined(ctx, item.name, r.x + 8 * f, r.y + r.h * 0.44, afford ? '#f4ead0' : '#8a7a68', '#000', 3);
+      ctx.font = `${10 * f}px ${SANS}`;
+      outlined(ctx, item.desc, r.x + 8 * f, r.y + r.h * 0.82, '#b8a888', '#000', 2);
       if (item.price) {
         ctx.textAlign = 'right';
-        ctx.font = `bold 12px ${SANS}`;
-        outlined(ctx, `${cost}g`, x + SHOP_W - 18, iy + 21, afford ? '#ffd860' : '#8a6a40', '#000', 3);
+        ctx.font = `bold ${12 * f}px ${SANS}`;
+        outlined(ctx, `${cost}g`, r.x + r.w - 8 * f, r.y + r.h * (L.wide ? 0.5 : 0.62), afford ? '#ffd860' : '#8a6a40', '#000', 3);
       }
-      ctx.textAlign = 'center';
     });
-    ctx.font = `11px ${SANS}`;
-    outlined(ctx, `STR ${Math.round(p.strength)}  ARM ${Math.round(p.armor * 100)}  SPD ${Math.round(p.speed)}  MAG ${p.magic.toFixed(1)}`, x + SHOP_W / 2, y + 400, '#d8c8a8', '#000', 2);
+    ctx.textAlign = 'center';
+    ctx.font = `${(L.wide ? 19 : 11 * f)}px ${SANS}`;
+    outlined(ctx, `STR ${Math.round(p.strength)}  ARM ${Math.round(p.armor * 100)}  SPD ${Math.round(p.speed)}  MAG ${p.magic.toFixed(1)}`, x + L.w / 2, y + L.h - (L.wide ? 16 : 10 * f), '#d8c8a8', '#000', L.wide ? 3 : 2);
     if (c.done) {
+      const last = shopRow(L, Math.ceil(SHOP.length / L.cols) - 1);
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      roundRect(ctx, x + 6, y + 56, SHOP_W - 12, 330, 6);
+      roundRect(ctx, x + 6, y + L.top - 6 * f, L.w - 12, last.y + last.h - (y + L.top) + 12 * f, 6);
       ctx.fill();
-      ctx.font = `bold 22px ${SANS}`;
-      outlined(ctx, 'READY!', x + SHOP_W / 2, y + 220, '#80ff80', '#000', 4);
+      ctx.font = `bold ${L.wide ? 40 : 22 * f}px ${SANS}`;
+      outlined(ctx, 'READY!', x + L.w / 2, (y + L.top + last.y + last.h) / 2 + 10, '#80ff80', '#000', 4);
     }
     if (c.deny > 0) c.deny -= 0.016;
   });
