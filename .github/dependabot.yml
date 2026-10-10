@@ -1,0 +1,17 @@
+# Dependabot: once a week, check the development tools in package.json (used to rebuild the
+# 3D models) for new versions and security fixes, and open a pull request for any updates.
+# The game itself has no npm dependencies at runtime; its libraries are in vendor/.
+#
+# GitHub reads this file from the repository's default branch, so it takes effect once the
+# branch the game lives on is the default (Settings -> General -> Default branch).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: claude/gauntlet-legends-remake-l6u3oy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-tools:
+        patterns: ['*']
