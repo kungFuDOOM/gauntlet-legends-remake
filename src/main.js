@@ -2,7 +2,7 @@
 //   title -> (intro story) -> hero select -> realm map -> play <-> paused
 //   play -> level clear -> shop -> realm map ... -> Skorne -> ending story -> ending
 
-import { VIEW_W, VIEW_H, CLASS_ORDER, MAX_PLAYERS } from './config.js';
+import { VIEW_W, VIEW_H, CLASSES, CLASS_ORDER, MAX_PLAYERS } from './config.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { Tutorial, tutorialView } from './tutorial.js';
@@ -13,9 +13,10 @@ import { SnapshotWriter, SnapshotReader, playSound, cleanUi, cleanEvents, cleanG
 import { Lobby } from './lobby.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
-import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, selectArrowAt, shopItemAt, realmStageAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
+import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, drawRecords, recordsTapAt, titleRecordsAt, selectArrowAt, shopItemAt, realmStageAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
+import { Stats } from './stats.js';
 
 // Always load the newest version of the game after an update (see sw.js).
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -74,23 +75,15 @@ let showControls = true; // the key-cap strip along the bottom (H toggles it)
 try { showControls = localStorage.getItem('gl-remake-controls') !== 'off'; } catch { /* storage unavailable */ }
 let magicHint = { t: 20, shown: 0 }; // reminders that magic exists
 
-const HISCORE_KEY = 'gl-remake-hiscores';
-function loadScores() {
-  try { return JSON.parse(localStorage.getItem(HISCORE_KEY)) || []; } catch { return []; }
-}
-function saveScores(g) {
-  try {
-    const list = loadScores();
-    for (const p of g.allPlayers()) list.push({ name: p.name, score: p.score, level: g.levelNum });
-    list.sort((a, b) => b.score - a.score);
-    localStorage.setItem(HISCORE_KEY, JSON.stringify(list.slice(0, 10)));
-  } catch { /* storage unavailable */ }
-}
-let hiscores = loadScores();
+// lifetime stats and the leaderboard (see stats.js)
+const stats = new Stats();
+let recordsTab = 0; // page shown on the stats screen
+// the title screen shows the best run
+function topScores() { return stats.top.map((r) => ({ name: CLASSES[r.cls].name, score: r.score, level: r.level })); }
 
 function setState(s) {
   if (window.__traceStates) console.log(`state ${state} -> ${s}`);
-  if (s === 'title') input.split = false; // a new party starts with one keyboard player
+  if (s === 'title') { input.split = false; stats.endRuns(); } // a new party starts with one keyboard player
   state = s; stateT = 0;
 }
 
@@ -158,12 +151,14 @@ function updateStory(dt) {
 
 // On the title screen almost any key starts (people try A, Enter, Space...), except the
 // ones that do something else there.
-const TITLE_IGNORE = /^(Key[EGMNVXPO]|Period|NumpadDecimal|Quote|Tab|Escape|F\d+|Meta|Alt|Control|OS|ContextMenu|CapsLock)/;
+const TITLE_IGNORE = /^(Key[EGMNVXPOL]|Period|NumpadDecimal|Quote|Tab|Escape|F\d+|Meta|Alt|Control|OS|ContextMenu|CapsLock)/;
 
 function updateTitle() {
   // the PLAY ONLINE button: tap or click it, or press O
   if (!net && !lobby.isOpen && (input.key('KeyO') || taps.some((t) => titleOnlineAt(t.x, t.y)))) { initAudio(); sfx.select(); lobby.open(); return; }
   if (lobby.isOpen) { if (input.key('Escape')) lobby.close(); return; } // don't start the game under the panel
+  // the STATS & LEADERBOARD button: tap or click it, or press L
+  if (!net && (input.key('KeyL') || taps.some((t) => titleRecordsAt(t.x, t.y)))) { initAudio(); sfx.select(); setState('stats'); return; }
   // Only players on this machine act here: online guests must never start a new quest
   // (it wipes the save) or start the host's game for them.
   const guests = [...input.remote.keys()];
@@ -178,6 +173,20 @@ function updateTitle() {
       showStory(STORY.intro, () => { save.progress.seenIntro = true; writeSave(save); begin(); });
     } else begin();
   }
+}
+
+// The stats & leaderboard screen: left/right or tap a tab to change page, back to the title.
+function updateRecords() {
+  const local = input.sources().filter((id) => !isNet(id));
+  let dir = 0;
+  for (const id of local) { const p = input.get(id).pressed; if (p.left) dir--; if (p.right) dir++; }
+  for (const t of taps) {
+    const hit = recordsTapAt(t.x, t.y);
+    if (hit === 'back') { sfx.select(); setState('title'); return; }
+    if (hit !== null && hit !== recordsTab) { recordsTab = hit; sfx.select(); }
+  }
+  if (dir) { recordsTab = (recordsTab + dir + 3) % 3; sfx.select(); }
+  if (input.key('KeyL') || local.some((id) => backPressed(id))) setState('title');
 }
 
 function updateConfirm() {
@@ -246,6 +255,9 @@ function CLASSES_NAME(cls) { return cls[0].toUpperCase() + cls.slice(1); }
 
 function startGame() {
   game = new Game();
+  // this device's heroes count toward its stats (not online guests', and not the training)
+  game.onStat = (p, key, n, sub) => { if (!isNet(p.source) && game && game.level && !game.level.tutorial) stats.add(p, key, n, sub); };
+  stats.gameStarted(!!net);
   // online guests start with fresh heroes; players here continue their saved ones
   slots.forEach((s, i) => { if (s) game.addPlayer(i, s.source, s.cls, isNet(s.source) ? null : save.heroes[s.cls]); });
   if (!save.progress.tutorialDone) startTutorial();
@@ -464,7 +476,8 @@ function hostSend(dt) {
     prog: save.progress, heroes: state === 'select' ? save.heroes : null,
     tut: tutorial ? [tutorial.idx, tutorial.doneT > 0 ? 1 : 0] : null,
   };
-  net.link.send({ t: 's', st: state, stT: Math.round(stateT * 100) / 100, ui, g: game ? net.writer.game(game) : null, fx });
+  // (the stats screen is this device's own: guests keep seeing the title)
+  net.link.send({ t: 's', st: state === 'stats' ? 'title' : state, stT: Math.round(stateT * 100) / 100, ui, g: game ? net.writer.game(game) : null, fx });
 }
 
 // Guest: apply what the host sent (all of it checked first: see netstate.js).
@@ -477,7 +490,9 @@ function guestMessage(m) {
     // keep our own clock for the screen's animations; only resync when it drifts
     const stT = Math.min(1e5, Math.max(0, Number(m.stT) || 0));
     if (state !== m.st || Math.abs(stateT - stT) > 0.5) stateT = stT;
+    const entered = state !== m.st && m.st;
     state = m.st;
+    if (entered === 'title') stats.endRuns(); // the host's game is over
     net.ui = ui;
     slots = ui.slots;
     countdown = ui.cd;
@@ -488,6 +503,9 @@ function guestMessage(m) {
     if (ui.toast && ui.toast !== net.lastToast) toast = { text: ui.toast, t: 2.5, local: true };
     net.lastToast = ui.toast;
     game = net.reader.apply(m.g, m.fx);
+    const mine = game && game.allPlayers().find((p) => p.source === net.me);
+    if (mine && !net.counted) { net.counted = true; stats.gameStarted(true); } // our hero joined in
+    if (entered === 'levelclear' && mine && !(game.level && game.level.tutorial)) stats.levelCleared([mine], !!(ui.ci && ui.ci.wasBoss));
     if (!m.g) for (const ev of cleanEvents(m.fx)) playSound(ev);
   } catch (err) {
     console.error(err);
@@ -544,6 +562,12 @@ function guestFrame(dt) {
   net.sendT -= dt;
   if (key !== net.lastPkt || net.sendT <= 0) { net.link.send(pkt); net.lastPkt = key; net.sendT = 0.1; }
   if (net.reader.game) net.reader.tick(dt);
+  // our hero's stats and leaderboard run, read off the host's game
+  const mine = state === 'play' && game && game.level && !game.level.tutorial && game.allPlayers().find((p) => p.source === net.me);
+  if (mine) {
+    stats.guestTick(mine);
+    stats.tick(dt, [mine], game.levelNum, { mode: 'online', n: game.allPlayers().length });
+  }
 }
 
 // ---------- playing ----------
@@ -608,6 +632,7 @@ function updatePlay(dt) {
   if (game.exitReached && game.level.treasure) {
     // treasure room over: back to the hub with the loot
     persist();
+    stats.treasureDone();
     toast = { text: 'Treasure room complete!', t: 2 };
     openHub(realmOf(clearInfo.level));
     return;
@@ -618,13 +643,12 @@ function updatePlay(dt) {
     const runesBefore = runeCount(save.progress);
     const unlockedBefore = unlockedClasses(save.progress);
     completeLevel(save.progress, n, game.runesFound);
+    stats.levelCleared(game.allPlayers().filter((p) => !isNet(p.source)), info.isBoss);
     const fresh = unlockedClasses(save.progress).filter((c) => !unlockedBefore.includes(c));
     for (const c of fresh) say(`A secret hero joins the legend: the ${c}!`, `unlock${c}`, 0);
     persist();
     clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, unlocked: fresh, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden') };
     if (save.progress.won && n === levelNumber(3, 4)) {
-      saveScores(game);
-      hiscores = loadScores();
       showStory(STORY.ending, () => setState('ending'));
       return;
     }
@@ -633,8 +657,7 @@ function updatePlay(dt) {
   }
   if (!game.livePlayers().length && game.allPlayers().every((p) => p.deadT > 2.5)) {
     persist();
-    saveScores(game);
-    hiscores = loadScores();
+    stats.save();
     setState('gameover');
   }
 }
@@ -732,9 +755,12 @@ function render() {
     drawLoading(ctx, loadProgress, loadError);
   } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
-    drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null, !net && state === 'title');
+    drawTitle(ctx, stateT, topScores(), hasProgress(save) ? save.progress : null, !net && state === 'title');
     if (guest) drawOverlay(ctx, `ROOM ${showCode(net.code)}`, ['Connected! Waiting for the host to start...', `Press ${btn('attack')} to join the party`], '#8fe0ff');
     if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
+  } else if (state === 'stats') {
+    r3d.renderShowcase(titleShowcase(stateT), stateT);
+    drawRecords(ctx, stateT, stats.data, save.progress, save.heroes, unlockedClasses(save.progress), recordsTab);
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
     drawStory(ctx, story, stateT);
@@ -780,7 +806,7 @@ function render() {
       if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? `Press ${btn('attack')} to enter the Treasure Room!` : `Press ${btn('attack')} to return to the hub`);
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
-      const lines = game.allPlayers().map((p) => `${p.name}: level ${p.lvl} · ${p.score} pts`);
+      const lines = game.allPlayers().map((p) => { const r = stats.rankOf(p); return `${p.name}: level ${p.lvl} · ${p.score} pts${r ? ` · #${r} on the leaderboard!` : ''}`; });
       lines.push('', `${btn('attack')}: continue (restart this level)`, `${btn('back')}: retreat to the hub`);
       drawOverlay(ctx, 'GAME OVER', lines, '#ff6050');
     }
@@ -831,6 +857,7 @@ function frame(now) {
 
   switch (state) {
     case 'title': updateTitle(); break;
+    case 'stats': updateRecords(); break;
     case 'confirm': updateConfirm(); break;
     case 'story': updateStory(dt); break;
     case 'select': updateSelect(dt); break;
@@ -849,6 +876,11 @@ function frame(now) {
       break;
     case 'levelclear': updateLevelClear(); break;
     case 'gameover': updateGameOver(); break;
+  }
+  if (state === 'play' && game && game.level && !game.level.tutorial) {
+    const all = game.allPlayers();
+    const online = all.some((p) => isNet(p.source));
+    stats.tick(dt, all.filter((p) => !isNet(p.source)), game.levelNum, { mode: online ? 'online' : all.length > 1 ? 'coop' : 'solo', n: all.length });
   }
   if (net && net.role === 'host') hostSend(dt);
   taps.length = 0;

@@ -80,6 +80,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Treasure rooms:** beat a guardian and the party gets 25 seconds in a vault heaped with gold, gems and chests.
 - **Secret heroes:** four more heroes join as the quest goes on: the **Minotaur** (defeat the Dragon), the **Falconess** (defeat the Chimera), the **Jackal** (defeat the Plague Fiend) and the **Tigress** (recover 12 Rune Stones).
 - **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
+- **Stats & leaderboard:** the **🏆 STATS & LEADERBOARD** button on the title screen (or `L`) opens the Hall of Legends: lifetime stats (time played, monsters slain by type, gold, deaths, potions, guardians...), a table of every hero you've played, and the 10 best runs (a run is one hero's score from starting a game until leaving it, solo, co-op or online). They're kept in this browser; online guests' stats count their own hero.
 
 
 - **Eight heroes**, each with its own stats and turbo attack:
@@ -110,7 +111,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
 - **Music** composed on the fly for the title, each realm, boss fights, the shop, treasure rooms and the victory screen.
 - **Difficulty that scales** with the level and the size of the party: monsters get tougher and generators busier further into the quest and with more players, while treasure is worth more in later realms.
-- **Arcade announcer** with pre-recorded neural-voice lines ("Warrior needs food, badly!"), made with the open Kokoro voice model; `V` turns it off. Also: a shared camera that keeps the party together, a minimap of explored areas, a high score table, and drop-in "continue" after dying.
+- **Arcade announcer** with pre-recorded neural-voice lines ("Warrior needs food, badly!"), made with the open Kokoro voice model; `V` turns it off. Also: a shared camera that keeps the party together, a minimap of explored areas, stats and a leaderboard, and drop-in "continue" after dying.
 
 ## Project layout
 
@@ -127,6 +128,7 @@ src/render3d.js   three.js renderer: builds level geometry from the tile map, li
 src/assets.js     loads the KayKit models; Actor = animated character with separate upper/lower-body actions
 src/models.js     procedural models for the Dragon, Chimera and Plague Fiend, magic pickups, effects
 src/hud.js        2D overlay: corner player panels, floating text, banners, menus
+src/stats.js      lifetime stats and the leaderboard (kept in the browser)
 vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder, PeerJS (all MIT)
 assets/models/    CC0 KayKit models, prepared by tools/build-assets.mjs
 assets/voice/     announcer recordings, made by tools/voice-lines.mjs + tools/build-voice.py
@@ -138,7 +140,7 @@ src/netstate.js   online play: packing the game into snapshots and mirroring the
 src/lobby.js      online play: the PLAY ONLINE panel and the room bar
 src/audio.js      synthesized sound effects, music and the announcer
 src/config.js     tuning tables for classes, enemies and power-ups
-test/             node:test suite (level generation and solvability, online snapshots)
+test/             node:test suite (level generation and solvability, online snapshots, stats, security)
 ```
 
 ## Rebuilding the 3D assets
@@ -165,4 +167,5 @@ npm test
 - More enemy types and per-realm enemy variety; teleporters
 - Unique layouts for each boss and multiple attack phases
 - Stat allocation on level-up
+- A worldwide leaderboard (needs a small server or hosted database to collect scores, plus checks against faked scores)
 - Online play: guests' own saved heroes, smoother movement for guests (predicting their own hero locally), reconnecting after a dropped connection, and a dedicated server so the host leaving doesn't end the game

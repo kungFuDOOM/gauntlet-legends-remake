@@ -1,6 +1,6 @@
 // 2D overlay drawn over the WebGL view: corner player panels, floating text, banners and menus.
 
-import { VIEW_W, VIEW_H, CLASSES, BASE_CLASSES as CLASS_ORDER, POWERUPS, TURBO_COST, MAX_PLAYERS, TILE, xpForLevel } from './config.js';
+import { VIEW_W, VIEW_H, CLASSES, BASE_CLASSES as CLASS_ORDER, ENEMIES, POWERUPS, TURBO_COST, MAX_PLAYERS, TILE, xpForLevel } from './config.js';
 import { T } from './level.js';
 import { Input } from './input.js';
 import { SHOP, priceOf } from './campaign.js';
@@ -461,6 +461,7 @@ export function drawTitle(ctx, time, hiscores, progress = null, online = false) 
     outlined(ctx, `Rune Stones: ${Object.keys(progress.runes).length} / 16   ·   ${btn('magic')}: begin a new quest`, VIEW_W / 2, 246, '#ffd890', '#000', 3);
   }
   if (online) drawOnlineButton(ctx, time);
+  if (online) drawRecordsButton(ctx);
   ctx.font = `12px ${SANS}`;
   const lines = device === 'touch' ? [
     'Drag on the left side to move · ATTACK, MAGIC and TURBO buttons on the right',
@@ -909,6 +910,191 @@ export function drawShop(ctx, time, g, cursors) {
       outlined(ctx, 'READY!', x + L.w / 2, (y + L.top + last.y + last.h) / 2 + 10, '#80ff80', '#000', 4);
     }
     if (c.deny > 0) c.deny -= 0.016;
+  });
+}
+
+// ---------- stats & leaderboard ----------
+
+// The title screen's button for it, top left.
+const RECORDS_BTN = { x: 14, y: 14, w: 290, h: 42 };
+export function titleRecordsAt(x, y) {
+  const b = RECORDS_BTN;
+  return x >= b.x - 8 && x <= b.x + b.w + 8 && y >= b.y - 8 && y <= b.y + b.h + 8;
+}
+
+function drawRecordsButton(ctx) {
+  const { x, y, w, h } = RECORDS_BTN;
+  roundRect(ctx, x, y, w, h, 12);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, 'rgba(120,84,20,0.92)'); g.addColorStop(1, 'rgba(60,38,8,0.92)');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#f2c14e';
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.textAlign = 'center';
+  ctx.font = `bold 18px ${SANS}`;
+  outlined(ctx, '🏆  STATS & LEADERBOARD', x + w / 2, y + 27, '#fff0c0', '#2a1800', 4);
+  if (device !== 'touch') {
+    ctx.font = `bold 12px ${SANS}`;
+    outlined(ctx, '(or press L)', x + w / 2, y + h + 15, '#e0c890', '#000', 3);
+  }
+}
+
+const RECORD_TABS = ['OVERVIEW', 'HEROES', 'LEADERBOARD'];
+const TAB_W = 220, TAB_H = 42, TAB_GAP = 12, TAB_Y = 72;
+const TAB_X0 = (VIEW_W - (TAB_W * 3 + TAB_GAP * 2)) / 2;
+const BACK_BTN = { x: 14, y: 14, w: 116, h: 40 };
+
+// What a tap on the stats screen hits: a tab (0-2), 'back', or null.
+export function recordsTapAt(x, y) {
+  const b = BACK_BTN;
+  if (x >= b.x - 6 && x <= b.x + b.w + 6 && y >= b.y - 6 && y <= b.y + b.h + 6) return 'back';
+  if (y < TAB_Y - 6 || y > TAB_Y + TAB_H + 6) return null;
+  for (let i = 0; i < 3; i++) {
+    const tx = TAB_X0 + i * (TAB_W + TAB_GAP);
+    if (x >= tx && x <= tx + TAB_W) return i;
+  }
+  return null;
+}
+
+const fmt = (n) => Math.floor(n).toLocaleString('en-US');
+function hours(sec) {
+  const m = Math.floor(sec / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+}
+function stageName(n) {
+  if (!n) return 'The hub';
+  return STAGE_NAMES[Math.floor((n - 1) / 4)][(n - 1) % 4];
+}
+
+// The stats screen. data: see stats.js · progress: the quest save · heroes: saved heroes
+// (for their levels) · unlocked: heroes that can be played · tab: 0-2
+export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab) {
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+  ctx.fillStyle = 'rgba(4,3,2,0.86)';
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.textAlign = 'center';
+  ctx.font = `bold 40px ${SERIF}`;
+  const tg = ctx.createLinearGradient(0, 20, 0, 60);
+  tg.addColorStop(0, '#fff4c0'); tg.addColorStop(1, '#c88a2a');
+  outlined(ctx, 'HALL OF LEGENDS', VIEW_W / 2, 52, tg, '#1a0a00', 6);
+
+  // back button and tabs
+  const b = BACK_BTN;
+  roundRect(ctx, b.x, b.y, b.w, b.h, 10);
+  ctx.fillStyle = 'rgba(40,26,10,0.9)'; ctx.fill();
+  ctx.strokeStyle = '#a07a30'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+  ctx.font = `bold 18px ${SANS}`;
+  outlined(ctx, '◀ BACK', b.x + b.w / 2, b.y + 26, '#f0e6d0', '#000', 3);
+  RECORD_TABS.forEach((name, i) => {
+    const x = TAB_X0 + i * (TAB_W + TAB_GAP), on = i === tab;
+    roundRect(ctx, x, TAB_Y, TAB_W, TAB_H, 10);
+    ctx.fillStyle = on ? 'rgba(200,150,50,0.9)' : 'rgba(30,22,12,0.9)'; ctx.fill();
+    ctx.strokeStyle = on ? '#ffe9a0' : '#6a5328'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+    ctx.font = `bold 20px ${SANS}`;
+    outlined(ctx, name, x + TAB_W / 2, TAB_Y + 28, on ? '#fff' : '#c8b890', '#000', 3);
+  });
+
+  if (tab === 0) drawOverview(ctx, data, progress, unlocked);
+  else if (tab === 1) drawHeroTable(ctx, data, heroes, unlocked);
+  else drawLeaderboard(ctx, data);
+
+  ctx.textAlign = 'center';
+  ctx.font = `15px ${SANS}`;
+  const help = device === 'touch' ? `Tap a tab to switch pages · ${btn('back')} or ◀ BACK: return` : `Left/Right: switch pages   ${btn('back')}: back`;
+  outlined(ctx, help, VIEW_W / 2, 628, '#b8a888', '#000', 3);
+}
+
+function drawOverview(ctx, d, progress, unlocked) {
+  const tiles = [
+    ['Time played', hours(d.time)], ['Games played', fmt(d.games)], ['Levels cleared', fmt(d.levels)], ['Guardians defeated', fmt(d.bosses)],
+    ['Monsters slain', fmt(d.kills)], ['Generators smashed', fmt(d.gens)], ['Gold collected', fmt(d.gold)], ['Deaths', fmt(d.deaths)],
+    ['Food eaten', fmt(d.food)], ['Potions used', fmt(d.potions)], ['Turbo attacks', fmt(d.turbo)], ['Rune Stones', `${Object.keys(progress.runes).length} / 16`],
+  ];
+  const w = (VIEW_W - 80 - 3 * 12) / 4, h = 104;
+  tiles.forEach(([name, value], i) => {
+    const x = 40 + (i % 4) * (w + 12), y = 130 + Math.floor(i / 4) * (h + 12);
+    roundRect(ctx, x, y, w, h, 10);
+    ctx.fillStyle = 'rgba(40,30,16,0.85)'; ctx.fill();
+    ctx.strokeStyle = '#5a4520'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.lineWidth = 1;
+    ctx.textAlign = 'center';
+    ctx.font = `bold 36px ${SANS}`;
+    outlined(ctx, value, x + w / 2, y + 54, '#ffe9a0', '#000', 4);
+    ctx.font = `17px ${SANS}`;
+    outlined(ctx, name, x + w / 2, y + 86, '#c8b890', '#000', 3);
+  });
+  // favourites
+  const foe = Object.entries(d.byEnemy).filter(([k]) => ENEMIES[k]).sort((a, b) => b[1] - a[1])[0];
+  const fav = Object.entries(d.heroes).sort((a, b) => b[1].time - a[1].time)[0];
+  const secrets = unlocked.filter((c) => CLASSES[c].secret).length;
+  ctx.font = `19px ${SANS}`;
+  const line1 = [
+    foe ? `Most slain: ${ENEMIES[foe[0]].name} × ${fmt(foe[1])}` : null,
+    fav && fav[1].time > 0 ? `Favourite hero: ${CLASSES[fav[0]].name} (${hours(fav[1].time)})` : null,
+  ].filter(Boolean).join('     ·     ');
+  outlined(ctx, line1 || 'Play a game and your stats will appear here.', VIEW_W / 2, 518, '#f0e6d0', '#000', 3);
+  outlined(ctx, `Online games: ${fmt(d.online)}     ·     Treasure rooms: ${fmt(d.treasure)}     ·     Keys used: ${fmt(d.keys)}     ·     Secret heroes: ${secrets} / 4`, VIEW_W / 2, 554, '#c8b890', '#000', 3);
+}
+
+function drawHeroTable(ctx, d, heroes, unlocked) {
+  const cols = [['HERO', 60, 'left'], ['LEVEL', 330, 'center'], ['TIME', 430, 'center'], ['KILLS', 540, 'center'], ['DEATHS', 650, 'center'], ['GOLD', 760, 'center'], ['BEST', 900, 'right']];
+  ctx.font = `bold 15px ${SANS}`;
+  for (const [name, x, align] of cols) { ctx.textAlign = align; outlined(ctx, name, x, 150, '#a89870', '#000', 3); }
+  const hidden = 4 - unlocked.filter((c) => CLASSES[c].secret).length;
+  const rows = unlocked.length + (hidden ? 1 : 0);
+  const rh = Math.min(48, (590 - 166) / rows);
+  unlocked.forEach((cls, i) => {
+    const y = 166 + i * rh, h = d.heroes[cls], saved = heroes[cls];
+    ctx.fillStyle = i % 2 ? 'rgba(40,30,16,0.55)' : 'rgba(20,15,8,0.55)';
+    ctx.fillRect(40, y, VIEW_W - 80, rh - 4);
+    const ty = y + rh / 2 + 5;
+    ctx.textAlign = 'left';
+    ctx.font = `italic bold ${Math.min(22, rh * 0.5)}px ${SERIF}`;
+    outlined(ctx, CLASSES[cls].name.toUpperCase(), 60, ty, CLASSES[cls].color, '#000', 4);
+    ctx.font = `${Math.min(20, rh * 0.45)}px ${SANS}`;
+    const vals = [saved ? saved.lvl : 1, h ? hours(h.time) : '—', h ? fmt(h.kills) : '—', h ? fmt(h.deaths) : '—', h ? fmt(h.gold) : '—', h && h.best ? fmt(h.best) : '—'];
+    vals.forEach((v, k) => { ctx.textAlign = cols[k + 1][2]; outlined(ctx, String(v), cols[k + 1][1], ty, '#f0e6d0', '#000', 3); });
+  });
+  if (hidden) {
+    ctx.textAlign = 'left';
+    ctx.font = `italic ${Math.min(19, rh * 0.45)}px ${SANS}`;
+    outlined(ctx, `🔒  ${hidden} secret hero${hidden === 1 ? '' : 'es'} still to find`, 60, 166 + unlocked.length * rh + rh / 2 + 5, '#8a7a60', '#000', 3);
+  }
+}
+
+function drawLeaderboard(ctx, d) {
+  const runs = d.runs.slice(0, 10);
+  const cols = [['#', 64, 'center'], ['HERO', 100, 'left'], ['SCORE', 400, 'right'], ['REACHED', 440, 'left'], ['PARTY', 690, 'left'], ['DATE', 900, 'right']];
+  ctx.font = `bold 15px ${SANS}`;
+  for (const [name, x, align] of cols) { ctx.textAlign = align; outlined(ctx, name, x, 150, '#a89870', '#000', 3); }
+  if (!runs.length) {
+    ctx.textAlign = 'center';
+    ctx.font = `italic 22px ${SERIF}`;
+    outlined(ctx, 'No legends yet. Go and make your name!', VIEW_W / 2, 320, '#c8b890', '#000', 3);
+    return;
+  }
+  const medal = ['#ffd84a', '#d8dce8', '#e09a5a'];
+  runs.forEach((r, i) => {
+    const y = 162 + i * 43, ty = y + 27;
+    ctx.fillStyle = i % 2 ? 'rgba(40,30,16,0.55)' : 'rgba(20,15,8,0.55)';
+    ctx.fillRect(40, y, VIEW_W - 80, 39);
+    ctx.textAlign = 'center';
+    ctx.font = `bold 21px ${SANS}`;
+    outlined(ctx, String(i + 1), 64, ty, medal[i] || '#c8b890', '#000', 3);
+    ctx.textAlign = 'left';
+    ctx.font = `italic bold 21px ${SERIF}`;
+    outlined(ctx, `${CLASSES[r.cls].name.toUpperCase()}${r.lvl ? `  LV${r.lvl}` : ''}`, 100, ty, CLASSES[r.cls].color, '#000', 4);
+    ctx.textAlign = 'right';
+    ctx.font = `bold 21px ${SANS}`;
+    outlined(ctx, fmt(r.score), 400, ty, '#ffe070', '#000', 3);
+    ctx.textAlign = 'left';
+    ctx.font = `19px ${SANS}`;
+    outlined(ctx, stageName(r.level), 440, ty, '#f0e6d0', '#000', 3);
+    outlined(ctx, r.mode === 'solo' ? 'Solo' : `${r.mode === 'online' ? 'Online' : 'Co-op'} ${r.players}P`, 690, ty, r.mode === 'online' ? '#8fe0ff' : '#f0e6d0', '#000', 3);
+    ctx.textAlign = 'right';
+    outlined(ctx, r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—', 900, ty, '#c8b890', '#000', 3);
   });
 }
 

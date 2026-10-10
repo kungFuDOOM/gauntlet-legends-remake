@@ -20,7 +20,10 @@ export class Game {
     this.stats = { magic: 0, turbo: 0, food: 0 }; // things the tutorial waits for
     this.fx = null;       // when hosting online: effects to forward to guests (see net.js)
     this.levelSeq = 0;    // counts level loads, so guests notice even a restart of the same level
+    this.onStat = null;   // (player, key, amount, detail): lifetime stats and records (see stats.js)
   }
+
+  stat(p, key, n = 1, sub) { if (p && this.onStat) this.onStat(p, key, n, sub); }
 
   // ---------- setup ----------
 
@@ -33,7 +36,7 @@ export class Game {
       hp: def.hp, score: 0, keys: 0, potions: 1, xp: 0, lvl: 1,
       strength: def.strength, shotDmg: def.shotDmg, armor: def.armor, speed: def.speed, magic: def.magic,
       shotCd: 0, turbo: 50, buffs: {}, hurtFlash: 0, invuln: 0, dash: null, swing: 0, walk: 0, throwT: 0,
-      warnT: 0, deadT: 0, drain: 0, gold: 0,
+      warnT: 0, deadT: 0, drain: 0, gold: 0, kills: 0,
     };
     if (saved) {
       for (const k of ['lvl', 'xp', 'strength', 'shotDmg', 'armor', 'speed', 'magic', 'gold', 'potions']) if (typeof saved[k] === 'number') p[k] = saved[k];
@@ -502,6 +505,7 @@ export class Game {
       const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
       if (this.tile(tx, ty) === T.DOOR) {
         p.keys--;
+        this.stat(p, 'keys');
         this.openDoorAt(tx, ty);
         return;
       }
@@ -510,6 +514,7 @@ export class Game {
 
   killPlayer(p) {
     p.alive = false; p.hp = 0; p.deadT = 0; p.dash = null;
+    this.stat(p, 'deaths');
     this.burst(p.x, p.y, p.color, 30, 200);
     sfx.die();
     say(`${p.name} has died`, `dead${p.slot}`, 3000);
@@ -653,6 +658,7 @@ export class Game {
     p.turbo -= TURBO_COST;
     p.shotCd = 0.5;
     this.stats.turbo++;
+    this.stat(p, 'turbo');
     sfx.turbo();
     this.shake = 6;
     switch (p.def.turbo) {
@@ -689,6 +695,7 @@ export class Game {
       if (p.potions <= 0) return;
       p.potions--;
       this.stats.magic++;
+      this.stat(p, 'potions');
     }
     sfx.potion();
     this.flash = 1;
@@ -727,7 +734,7 @@ export class Game {
   onEnemyKilled(e, p) {
     e.hp = 0;
     this.burst(e.x, e.y, e.def.color || '#888', e.type === 'boss' ? 80 : 12, e.type === 'boss' ? 300 : 140);
-    if (p) { p.score += e.def.score; this.gainXp(p, Math.round(e.def.xp * this.diff.xp)); }
+    if (p) { p.score += e.def.score; this.gainXp(p, Math.round(e.def.xp * this.diff.xp)); p.kills++; this.stat(p, 'kills', 1, e.type); }
     if (e.type === 'death') this.text(e.x, e.y - 20, 'DEATH DEFEATED! +1000', '#ffe070', 2);
     if (e.type === 'boss') this.onBossKilled(e);
   }
@@ -756,7 +763,7 @@ export class Game {
     if (g.hp <= 0) {
       sfx.explode();
       this.burst(g.x, g.y, '#c0a070', 25, 180);
-      if (p) { p.score += 100; this.gainXp(p, 15); }
+      if (p) { p.score += 100; this.gainXp(p, 15); this.stat(p, 'gens'); }
       this.text(g.x, g.y - 20, '+100', '#ffe070');
     }
   }
@@ -1099,15 +1106,16 @@ export class Game {
         say(`${p.name} ate poisoned food!`, 'poison', 6000);
         return true;
       case 'food':
-        p.hp += FOOD_HEAL; sfx.food(); this.stats.food++; this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
+        p.hp += FOOD_HEAL; sfx.food(); this.stats.food++; this.stat(p, 'food'); this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
       case 'gold':
-        { const gv = Math.round(50 * this.diff.gold); p.score += 100; p.gold += gv; sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#ffe070'); return true; }
+        { const gv = Math.round(50 * this.diff.gold); p.score += 100; p.gold += gv; this.stat(p, 'gold', gv); sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#ffe070'); return true; }
       case 'gem':
-        { const gv = Math.round(200 * this.diff.gold); p.score += 500; p.gold += gv; sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#80e0ff'); return true; }
+        { const gv = Math.round(200 * this.diff.gold); p.score += 500; p.gold += gv; this.stat(p, 'gold', gv); sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#80e0ff'); return true; }
       case 'rune': {
         const guardian = it.sub !== 'hidden';
         p.score += guardian ? 5000 : 2500;
         p.gold += guardian ? 500 : 300;
+        this.stat(p, 'gold', guardian ? 500 : 300);
         this.runesFound.push(guardian ? 'guardian' : 'hidden');
         sfx.powerup(); sfx.levelup();
         this.flash = 0.6;

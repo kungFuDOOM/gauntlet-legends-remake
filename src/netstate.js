@@ -41,7 +41,7 @@ export class SnapshotWriter {
         p.slot, p.cls, p.source, r1(p.x), r1(p.y), r2(p.fx), r2(p.fy), Math.round(p.hp), p.alive ? 1 : 0, r2(p.deadT),
         p.score, p.gold, p.keys, p.potions, Math.round(p.turbo), p.lvl, p.xp, buffs(p.buffs), r2(p.hurtFlash), r2(p.invuln),
         act(p.act), p.dash ? 1 : 0, p.famX !== undefined ? r1(p.famX) : null, p.famY !== undefined ? r1(p.famY) : null,
-        p.maxHp || 0, r2(p.strength), r2(p.armor), r2(p.magic), r1(p.speed), r1(p.shotDmg),
+        p.maxHp || 0, r2(p.strength), r2(p.armor), r2(p.magic), r1(p.speed), r1(p.shotDmg), p.kills || 0,
       ]),
       E: g.enemies.map((e) => [
         this.id(e), e.type, r1(e.x), r1(e.y), Math.round(e.hp), e.maxHp, r2(e.hurt), e.invisible ? 1 : 0, act(e.act),
@@ -98,6 +98,7 @@ export function cleanGame(s) {
         num(r[14], 0, 100), int(r[15], 1, 999), num(r[16], 0, 1e9), buffs(r[17]), num(r[18], 0, 5), num(r[19], 0, 60),
         cleanAct(r[20]), r[21] ? 1 : 0, r[22] == null ? null : num(r[22], -POS, POS), r[23] == null ? null : num(r[23], -POS, POS),
         num(r[24], 0, 1e5), num(r[25], 0, 1e4), num(r[26], 0, 1), num(r[27], 0, 100), num(r[28], 0, 2000), num(r[29], 0, 1e4),
+        int(r[30], 0, 1e9),
       ];
     }),
     E: list(s.E, 150).filter((r) => Array.isArray(r) && (r[1] === 'boss' || own(ENEMIES, r[1]))).map((r) => [
@@ -266,7 +267,7 @@ export class SnapshotReader {
       p.dash = row[21] ? {} : null;
       if (row[22] !== null) { p.famX = row[22]; p.famY = row[23]; } else { delete p.famX; delete p.famY; }
       if (row[24]) p.maxHp = row[24];
-      [p.strength, p.armor, p.magic, p.speed, p.shotDmg] = row.slice(25, 30);
+      [p.strength, p.armor, p.magic, p.speed, p.shotDmg, p.kills] = row.slice(25, 31);
       g.players[slot] = p;
     }
 
