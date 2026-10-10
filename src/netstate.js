@@ -100,26 +100,32 @@ export function cleanGame(s) {
         num(r[24], 0, 1e5), num(r[25], 0, 1e4), num(r[26], 0, 1), num(r[27], 0, 100), num(r[28], 0, 2000), num(r[29], 0, 1e4),
       ];
     }),
-    E: list(s.E, 400).filter((r) => Array.isArray(r) && (r[1] === 'boss' || own(ENEMIES, r[1]))).map((r) => [
+    E: list(s.E, 150).filter((r) => Array.isArray(r) && (r[1] === 'boss' || own(ENEMIES, r[1]))).map((r) => [
       int(r[0], 1, 1e9), r[1], num(r[2], -POS, POS), num(r[3], -POS, POS), num(r[4], -1e6, 1e6), num(r[5], 1, 1e6), num(r[6], 0, 5),
       r[7] ? 1 : 0, cleanAct(r[8]), num(r[9], 0, 60), num(r[10], -2, 2), num(r[11], -2, 2), num(r[12], -60, 60), r[13] ? 1 : 0, r[14] ? 1 : 0,
     ]),
-    G: list(s.G, 120).filter((r) => Array.isArray(r) && own(ENEMIES, r[1])).map((r) => [int(r[0], 1, 1e9), r[1], num(r[2], -POS, POS), num(r[3], -POS, POS), num(r[4], 0, 1e4), num(r[5], 0, 5)]),
-    I: list(s.I, 1200).filter((r) => Array.isArray(r) && ITEM_TYPES.has(r[1]) && (r[1] !== 'amulet' || own(POWERUPS, r[2]))).map((r) => [
+    G: list(s.G, 40).filter((r) => Array.isArray(r) && own(ENEMIES, r[1])).map((r) => [int(r[0], 1, 1e9), r[1], num(r[2], -POS, POS), num(r[3], -POS, POS), num(r[4], 0, 1e4), num(r[5], 0, 5)]),
+    I: list(s.I, 400).filter((r) => Array.isArray(r) && ITEM_TYPES.has(r[1]) && (r[1] !== 'amulet' || own(POWERUPS, r[2]))).map((r) => [
       int(r[0], 1, 1e9), r[1], r[1] === 'amulet' ? r[2] : r[2] === 'hidden' ? 'hidden' : 0, num(r[3], -POS, POS), num(r[4], -POS, POS),
     ]),
-    R: list(s.R, 800).filter((r) => Array.isArray(r) && PROJ_KINDS.has(r[1])).map((r) => [
+    R: list(s.R, 300).filter((r) => Array.isArray(r) && PROJ_KINDS.has(r[1])).map((r) => [
       int(r[0], 1, 1e9), r[1], num(r[2], -POS, POS), num(r[3], -POS, POS), num(r[4], -5000, 5000), num(r[5], -5000, 5000), num(r[6], -500, 500),
       num(r[7], -POS, POS), num(r[8], -POS, POS), num(r[9], 0, 60), num(r[10], 0, 60), r[11] ? 1 : 0, num(r[12], -1e4, 1e4),
     ]),
   };
 }
 
-// Effects, sounds and announcer lines.
+// Effects, sounds and announcer lines, with a cap per kind per message (a host sends about
+// 20 messages a second; real play stays well under these).
+const EVENT_CAP = { p: 300, b: 40, t: 20, a: 8, v: 1 };
 export function cleanEvents(fx) {
   const out = [];
+  const count = { p: 0, b: 0, t: 0, a: 0, v: 0 };
+  const sounds = new Set();
   for (const ev of list(fx, 600)) {
-    if (!Array.isArray(ev)) continue;
+    if (!Array.isArray(ev) || !own(EVENT_CAP, ev[0]) || count[ev[0]] >= EVENT_CAP[ev[0]]) continue;
+    if (ev[0] === 'a') { if (sounds.has(ev[1])) continue; sounds.add(ev[1]); } // one of each sound per message
+    count[ev[0]]++;
     switch (ev[0]) {
       case 'p': out.push(['p', num(ev[1], -POS, POS), num(ev[2], -POS, POS), num(ev[3], -2000, 2000), num(ev[4], -2000, 2000), color(ev[5]), num(ev[6], 0, 3), num(ev[7], 0, 10)]); break;
       case 'b': out.push(['b', num(ev[1], -POS, POS), num(ev[2], -POS, POS), color(ev[3]), int(ev[4], 0, 100), num(ev[5], 0, 1000)]); break;
@@ -132,9 +138,27 @@ export function cleanEvents(fx) {
   return out;
 }
 
+function story(v) {
+  if (!v || typeof v !== 'object') return null;
+  const lines = list(v.lines, 12).map((l) => str(l, 400));
+  if (!lines.length) return null;
+  return { lines, idx: int(v.idx, 0, lines.length - 1), t: num(v.t, 0, 1e4) };
+}
+
+// Screens that need data to draw: a message for them without it is ignored.
+const NEEDS_GAME = new Set(['shop', 'realm', 'play', 'paused', 'levelclear', 'gameover', 'ending']);
+
 // The menu state that comes with each snapshot (hero select, story, stage picker, shop...).
-export function cleanUi(st, ui) {
+// Returns null (ignore the message) if it's malformed or a screen is missing what it needs.
+export function cleanUi(st, ui, hasGame = true) {
   if (!STATES.has(st) || !ui || typeof ui !== 'object') return null;
+  const out = cleanUiFields(ui);
+  if (NEEDS_GAME.has(st) && !hasGame) return null;
+  if ((st === 'story' && !out.story) || (st === 'levelclear' && !out.ci) || (st === 'realm' && !out.rp)) return null;
+  return out;
+}
+
+function cleanUiFields(ui) {
   const flags = (o, keyOk) => {
     const out = {};
     if (o && typeof o === 'object') for (const k of Object.keys(o).slice(0, 64)) if (keyOk(k)) out[k] = !!o[k];
@@ -159,9 +183,7 @@ export function cleanUi(st, ui) {
       level: int(ci.level, 1, 16), wasBoss: !!ci.wasBoss, realm: str(ci.realm, 40), name: str(ci.name, 60), newRunes: int(ci.newRunes, 0, 16),
       unlocked: list(ci.unlocked, 4).filter((c) => own(CLASSES, c)), hidden: !!ci.hidden,
     },
-    story: ui.story && typeof ui.story === 'object'
-      ? { lines: list(ui.story.lines, 12).map((l) => str(l, 400)), idx: int(ui.story.idx, 0, 11), t: num(ui.story.t, 0, 1e4) }
-      : null,
+    story: story(ui.story),
     toast: ui.toast ? str(ui.toast, 120) : null,
     prog: {
       completed: flags(p.completed, (k) => /^([1-9]|1[0-6])$/.test(k)),
@@ -175,6 +197,8 @@ export function cleanUi(st, ui) {
 }
 
 // ---------- guest side ----------
+
+const NEW_PER_SEC = { E: 200, G: 60, I: 600, R: 400 };
 
 // Positions glide from where they're drawn now to the newest snapshot over one snapshot
 // interval, which hides the gaps between updates at the cost of ~50 ms of extra delay.
@@ -193,6 +217,8 @@ export class SnapshotReader {
     this.players = [];
     this.arrived = 0;
     this.interval = 50;
+    this.budget = { t: 0, E: 0, G: 0, I: 0, R: 0 };
+    this.reloadedAt = -1e9;
   }
 
   // Apply one snapshot `s` (the `g` part of the host's message) plus its effect events.
@@ -204,6 +230,9 @@ export class SnapshotReader {
     this.arrived = now;
     let g = this.game;
     if (!g || g.levelKey !== s.k || this.seq !== s.q) {
+      // a new level: at most about one a second (real level changes are seconds apart)
+      if (g && now - this.reloadedAt < 750) return g;
+      this.reloadedAt = now;
       g = this.game || new this.Game();
       g.loadMirror(s.k);
       this.seq = s.q;
@@ -241,16 +270,25 @@ export class SnapshotReader {
       g.players[slot] = p;
     }
 
+    // Each new monster, item or shot means building a 3D model, so a host only gets to
+    // create so many per second (a level's start and the busiest fights stay well under).
+    if (now - this.budget.t > 1000) this.budget = { t: now, E: 0, G: 0, I: 0, R: 0 };
     const sync = (key, rows, make, update) => {
       const map = this.maps[key];
       const seen = new Set();
-      const list = rows.map((row) => {
+      const list = [];
+      for (const row of rows) {
         let o = map.get(row[0]);
-        if (!o) { o = make(row); map.set(row[0], o); }
+        if (!o) {
+          if (this.budget[key] >= NEW_PER_SEC[key]) continue;
+          this.budget[key]++;
+          o = make(row);
+          map.set(row[0], o);
+        }
         update(o, row);
         seen.add(row[0]);
-        return o;
-      });
+        list.push(o);
+      }
       for (const id of map.keys()) if (!seen.has(id)) map.delete(id);
       return list;
     };
@@ -315,8 +353,19 @@ function playEvent(g, ev) {
   }
 }
 
-// Sounds and announcer lines (also sent outside a level, e.g. on menus).
+// Sounds and announcer lines (also sent outside a level, e.g. on menus). Each sound plays at
+// most every 50 ms and the announcer at most every 400 ms, whatever a host sends.
+const soundAt = new Map();
+let voiceAt = -1e9;
 export function playSound(ev) {
-  if (ev[0] === 'a' && own(sfx, ev[1])) sfx[ev[1]](...ev.slice(2));
-  else if (ev[0] === 'v') say(ev[1], ev[2], ev[3]);
+  const now = performance.now();
+  if (ev[0] === 'a' && own(sfx, ev[1])) {
+    if (now - (soundAt.get(ev[1]) || -1e9) < 50) return;
+    soundAt.set(ev[1], now);
+    sfx[ev[1]](...ev.slice(2));
+  } else if (ev[0] === 'v') {
+    if (now - voiceAt < 400) return;
+    voiceAt = now;
+    say(ev[1], ev[2], Math.max(ev[3], 400));
+  }
 }

@@ -8,9 +8,9 @@
 
 // Bump when the snapshot format or level generation changes, so old and new versions of
 // the game don't try to play together.
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 export const MAX_GUESTS = 3;
-export const CODE_LENGTH = 6;
+export const CODE_LENGTH = 8; // 24^8: about 110 billion codes
 const PREFIX = 'glremake-';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O, which look like 1 and 0
 
@@ -21,9 +21,10 @@ const PEER_SERVER = null;
 // limits (generous for real play, far below what would hurt a browser)
 const MAX_INPUT_BYTES = 256;          // guest -> host input packets are ~60 bytes
 const MAX_SNAPSHOT_BYTES = 400000;    // host -> guest snapshots are ~5-12 KB
-const MAX_MSGS_PER_SEC = 120;         // guests send at most ~60/s, the host ~20/s
+const MAX_INPUTS_PER_SEC = 120;       // guests send at most ~60/s
+const MAX_SNAPSHOTS_PER_SEC = 40;     // the host sends ~20/s
 const MAX_BUFFERED = 1 << 20;         // stop queueing for a guest that isn't keeping up
-const MAX_CONNECT_ATTEMPTS = 10;      // per 10 seconds, to shrug off connection spam
+const MAX_PENDING = 4;                // connections still opening at once (shrugs off spam)
 
 const isLocal = (h) => h === 'localhost' || h === '127.0.0.1';
 
@@ -70,6 +71,25 @@ function makeCode() {
   return Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 }
 
+// A random id for this browser, kept on the device, sent when joining so a kick sticks even
+// though every join gets a fresh connection id. (Clearing site data gets a new one; for a
+// determined troublemaker, Lock the room.)
+function clientId() {
+  try {
+    let id = localStorage.getItem('gl-remake-cid');
+    if (!id || !/^[0-9a-f]{32}$/.test(id)) {
+      id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem('gl-remake-cid', id);
+    }
+    return id;
+  } catch {
+    return '';
+  }
+}
+
+// Room codes shown in two halves ("ABCD EFGH") so they're easy to read out.
+export const showCode = (c) => (c.length > 4 ? `${c.slice(0, 4)} ${c.slice(4)}` : c);
+
 // Room codes as typed: letters only, upper case.
 export const cleanCode = (s) => String(s || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, CODE_LENGTH);
 
@@ -107,7 +127,9 @@ export class Host {
     this.conns = new Map(); // guest id ('net1', 'net2', ...) -> connection
     this.nextId = 1;
     this.code = null;
-    this.attempts = [];
+    this.pending = new Set(); // connections that haven't finished opening
+    this.blocked = new Set(); // peers the host kicked: they can't come back to this room
+    this.locked = false;      // no new players
   }
 
   // Resolves with the room code once the matchmaking server has registered it.
@@ -140,19 +162,23 @@ export class Host {
   }
 
   accept(conn) {
-    // connection spam: past a handful of attempts in 10 seconds, drop new ones on the floor
-    const now = performance.now();
-    this.attempts = this.attempts.filter((t) => now - t < 10000);
-    this.attempts.push(now);
-    if (this.attempts.length > MAX_CONNECT_ATTEMPTS || conn.serialization !== 'raw') { conn.close(); return; }
-    if (this.conns.size >= MAX_GUESTS) {
-      conn.on('open', () => { conn.send(JSON.stringify({ t: 'full' })); setTimeout(() => conn.close(), 500); });
+    // Only a few connections may be opening at once (spam can't pile up, and since players
+    // who finish connecting don't count, it can't lock real friends out either); kicked
+    // players stay out; a locked or full room turns newcomers away.
+    const cid = conn.metadata && typeof conn.metadata.cid === 'string' ? conn.metadata.cid.slice(0, 64) : '';
+    if (conn.serialization !== 'raw' || this.blocked.has(conn.peer) || (cid && this.blocked.has(cid)) || this.pending.size >= MAX_PENDING) { conn.close(); return; }
+    if (this.locked || this.conns.size >= MAX_GUESTS) {
+      conn.on('open', () => { conn.send(JSON.stringify({ t: this.locked ? 'locked' : 'full' })); setTimeout(() => conn.close(), 500); });
       return;
     }
+    this.pending.add(conn);
+    setTimeout(() => { if (this.pending.delete(conn)) conn.close(); }, 10000); // never finished opening
     const id = `net${this.nextId++}`;
-    const limit = rateLimiter(MAX_MSGS_PER_SEC);
+    conn.cid = cid;
+    const limit = rateLimiter(MAX_INPUTS_PER_SEC);
     conn.on('open', () => {
-      if (this.conns.size >= MAX_GUESTS) { conn.close(); return; }
+      this.pending.delete(conn);
+      if (this.locked || this.conns.size >= MAX_GUESTS) { conn.close(); return; }
       this.conns.set(id, conn);
       conn.send(JSON.stringify({ t: 'hello', you: id, v: PROTOCOL }));
       this.h.onJoin(id);
@@ -165,12 +191,23 @@ export class Host {
       const m = parse(data, MAX_INPUT_BYTES);
       if (m && m.t === 'i') this.h.onInput(id, m);
     });
-    const gone = () => { if (this.conns.delete(id)) this.h.onLeave(id); };
+    const gone = () => { this.pending.delete(conn); if (this.conns.delete(id)) this.h.onLeave(id); };
     conn.on('close', gone);
     conn.on('error', gone);
   }
 
   get count() { return this.conns.size; }
+  get guests() { return [...this.conns.keys()]; }
+
+  // Remove a guest for good: they can't rejoin this room.
+  kick(id) {
+    const c = this.conns.get(id);
+    if (!c) return;
+    this.blocked.add(c.peer);
+    if (c.cid) this.blocked.add(c.cid);
+    c.send(JSON.stringify({ t: 'kicked' }));
+    setTimeout(() => c.close(), 300);
+  }
 
   send(msg) {
     const text = JSON.stringify(msg);
@@ -216,9 +253,9 @@ export class Guest {
       const timer = setTimeout(() => fail("Couldn't connect to that game. Check the code and try again."), 15000);
       peer.on('error', (err) => fail(explain(err)));
       peer.on('open', () => {
-        const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'raw' });
+        const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'raw', metadata: { cid: clientId() } });
         this.conn = conn;
-        const limit = rateLimiter(MAX_MSGS_PER_SEC);
+        const limit = rateLimiter(MAX_SNAPSHOTS_PER_SEC);
         conn.on('data', (data) => {
           const r = limit();
           if (r.flooding) { fail('The host was sending too much data.'); return; }
@@ -227,6 +264,7 @@ export class Guest {
           if (!m) return;
           if (!settled) {
             if (m.t === 'full') { fail('That game is full.'); return; }
+            if (m.t === 'locked') { fail('The host has locked that game.'); return; }
             if (m.t !== 'hello' || typeof m.you !== 'string' || !/^net\d{1,4}$/.test(m.you)) return;
             if (m.v !== PROTOCOL) { fail('You and the host have different versions of the game. Both of you refresh the page.'); return; }
             settled = true;
@@ -234,6 +272,7 @@ export class Guest {
             resolve(m.you);
             return;
           }
+          if (m.t === 'kicked') { fail('The host removed you from the game.'); return; }
           this.h.onMessage(m);
         });
         conn.on('close', () => fail('The host left the game.'));

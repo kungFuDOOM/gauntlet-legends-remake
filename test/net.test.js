@@ -56,9 +56,9 @@ test('a guest mirrors the host game from snapshots', () => {
   assert.equal(g.enemies.length, host.enemies.length);
   assert.ok(!g.enemies.includes(firstEnemy));
 
-  // a new level replaces the mirror's level
+  // a new level replaces the mirror's level (level changes are a second or more apart)
   host.startHub();
-  reader.apply(wire(writer.game(host)), []);
+  reader.apply(wire(writer.game(host)), [], performance.now() + 1000);
   assert.equal(g.levelKey, 'H');
   assert.ok(g.level.hub);
 });
@@ -123,13 +123,64 @@ test('guests shrug off malicious or malformed snapshots from a host', async () =
   assert.equal(({}).polluted, undefined, 'no prototype pollution');
   assert.deepEqual(ui.heroes, { wizard: { lvl: 999, gold: 0 } });
   assert.deepEqual(ui.story.lines.map((l) => l.length), [2, 0, 400]);
-  assert.equal(ui.story.idx, 11);
+  assert.equal(ui.story.idx, 2, 'clamped to the last real page');
   assert.ok(ui.toast.length <= 120);
 });
 
 test('room codes are letters only and the right length', async () => {
   const { cleanCode, CODE_LENGTH } = await import('../src/net.js');
-  assert.equal(CODE_LENGTH, 6);
-  assert.equal(cleanCode(' ab-c1d<e>f9g '), 'ABCDEF');
+  assert.equal(CODE_LENGTH, 8);
+  assert.equal(cleanCode(' ab-c1d<e>f9g hijk'), 'ABCDEFGH');
+  assert.equal(cleanCode('abcd efgh'), 'ABCDEFGH', 'typed with the space it is shown with');
   assert.equal(cleanCode(null), '');
+});
+
+test('a host cannot flood a guest with effects, sounds, objects or level reloads', async () => {
+  const { cleanEvents, cleanUi } = await import('../src/netstate.js');
+  const many = (ev, n) => Array.from({ length: n }, () => ev);
+  const out = cleanEvents([...many(['a', 'boss'], 500), ['a', 'join'], ...many(['v', 'hi', 'story1', 0], 50), ...many(['t', 0, 0, 'x'], 500), ...many(['b', 0, 0, '#fff', 100, 1], 500)]);
+  const kinds = (k) => out.filter((e) => e[0] === k).length;
+  assert.equal(kinds('a'), 2, 'one of each sound per message');
+  assert.equal(kinds('v'), 1, 'one announcer line per message');
+  assert.equal(kinds('t'), 20);
+  assert.equal(cleanEvents(many(['b', 0, 0, '#fff', 100, 1], 500)).length, 40, 'bursts capped');
+  assert.equal(cleanEvents([...many(['a', 'boss'], 700), ['t', 0, 0, 'late']]).length, 1, 'at most 600 events are even looked at');
+
+  // floating text stays bounded however many arrive
+  const g0 = new Game();
+  g0.addPlayer(0, 'kb', 'warrior');
+  g0.startLevel(1);
+  for (let i = 0; i < 5000; i++) g0.text(0, 0, 'spam', '#fff', 5);
+  assert.ok(g0.texts.length <= 100);
+
+  // fresh ids every snapshot: only so many new monsters get built per second
+  const host = new Game();
+  host.addPlayer(0, 'kb', 'warrior');
+  host.startLevel(1);
+  const reader = new SnapshotReader(Game);
+  const base = wire(new SnapshotWriter().game(host));
+  const t0 = performance.now();
+  let built = 0;
+  const seen = new Set();
+  for (let k = 0; k < 20; k++) {
+    const snap = { ...base, E: Array.from({ length: 150 }, (_, i) => [1e6 + k * 1000 + i, 'grunt', 100, 100, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0]) };
+    const g = reader.apply(snap, [], t0 + k * 10);
+    for (const e of g.enemies) if (!seen.has(e)) { seen.add(e); built++; }
+  }
+  assert.ok(built <= 200, `${built} monsters built in one second`);
+
+  // flipping the level every message: reloads are limited
+  let reloads = 0, last = null;
+  for (let k = 0; k < 20; k++) {
+    const g = reader.apply({ ...base, k: k % 2 ? 'L2' : 'L3', q: k }, [], t0 + 2000 + k * 50);
+    if (g.levelKey !== last) { reloads++; last = g.levelKey; }
+  }
+  assert.ok(reloads <= 2, `${reloads} level reloads in one second`);
+
+  // screens arriving without what they need are ignored
+  assert.equal(cleanUi('levelclear', {}), null);
+  assert.equal(cleanUi('story', { story: { lines: [] } }), null);
+  assert.equal(cleanUi('realm', {}), null);
+  assert.equal(cleanUi('play', {}, false), null);
+  assert.ok(cleanUi('select', {}, false));
 });

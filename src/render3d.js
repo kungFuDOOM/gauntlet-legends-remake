@@ -700,6 +700,7 @@ export class Renderer3D {
         v.actor.flash(0);
         v.actor.die(v.kind === 'boss' ? 'Death_B' : 'Death_A');
         this.corpses.push({ ...v, t: 0 });
+        if (this.corpses.length > 40) this.scene.remove(this.corpses.shift().root); // bounded, whatever happens
       } else this.scene.remove(v.root);
     }
     this.corpses = this.corpses.filter((c) => {

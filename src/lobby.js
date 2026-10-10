@@ -1,4 +1,4 @@
-import { CODE_LENGTH, cleanCode } from './net.js';
+import { CODE_LENGTH, cleanCode, showCode } from './net.js';
 
 // The online lobby: a panel to host or join a game by room code (opened from the PLAY ONLINE
 // button the title screen draws), and a small status bar (room code, players, Leave) while online.
@@ -22,10 +22,13 @@ const CSS = `
   color: #f0e6d0; font: bold 13px 'Trebuchet MS', sans-serif; white-space: nowrap; }
 #online-bar b { color: #ffe080; letter-spacing: 2px; }
 #online-bar button { font: bold 12px sans-serif; color: #fff; background: #7a2a1a; border: 0; border-radius: 12px; padding: 4px 10px; cursor: pointer; }
+#online-bar .host-tools { display: flex; gap: 6px; }
+#online-bar .host-tools button { background: #3a3020; border: 1px solid #8a6a2a; }
+#online-bar .host-tools button.on { background: #6a5010; }
 `;
 
 export class Lobby {
-  // handlers: onHost(), onJoin(code), onLeave()
+  // handlers: onHost(), onJoin(code), onLeave(), onKick(id), onLock()
   constructor(handlers) {
     this.h = handlers;
     const style = document.createElement('style');
@@ -39,7 +42,7 @@ export class Lobby {
         <h2>Play online</h2>
         <p>Host a game and share its code with friends, or join a friend's game with theirs.</p>
         <div class="row"><button data-a="host">Host a game</button></div>
-        <div class="row"><input maxlength="${CODE_LENGTH}" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false"><button data-a="join">Join</button></div>
+        <div class="row"><input maxlength="${CODE_LENGTH + 4}" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false"><button data-a="join">Join</button></div>
         <div class="msg"></div>
         <button class="close" data-a="close">Close</button>
       </div>`;
@@ -64,9 +67,12 @@ export class Lobby {
     this.barCode = document.createElement('b');
     this.barRest = document.createElement('span');
     this.barText.append(this.barCode, this.barRest);
+    this.tools = document.createElement('span'); // host only: Lock and Kick buttons
+    this.tools.className = 'host-tools';
+    this.toolsKey = '';
     const leave = document.createElement('button');
     leave.textContent = 'Leave';
-    this.bar.append(this.barText, leave);
+    this.bar.append(this.barText, this.tools, leave);
     leave.addEventListener('click', () => this.h.onLeave());
     this.bar.addEventListener('pointerdown', (e) => e.stopPropagation());
     document.body.appendChild(this.bar);
@@ -105,11 +111,32 @@ export class Lobby {
       const after = online.role === 'host'
         ? ` · ${online.players ? `${online.players} friend${online.players === 1 ? '' : 's'} online` : 'share the code with friends'}`
         : '';
-      const code = cleanCode(online.code);
+      const code = showCode(cleanCode(online.code));
       if (this.barText.firstChild !== this.barCode) this.barText.prepend(document.createTextNode(''));
       if (this.barText.firstChild.textContent !== before) this.barText.firstChild.textContent = before;
       if (this.barCode.textContent !== code) this.barCode.textContent = code;
       if (this.barRest.textContent !== after) this.barRest.textContent = after;
+    }
+    // host tools: Lock (no new players) and a Kick button per online player
+    const guests = online && online.role === 'host' ? online.guests || [] : [];
+    const key = online && online.role === 'host' ? `${online.locked}|${guests.map((g) => g.id + g.label).join(',')}` : '';
+    if (key !== this.toolsKey) {
+      this.toolsKey = key;
+      this.tools.replaceChildren();
+      if (online && online.role === 'host') {
+        const lock = document.createElement('button');
+        lock.textContent = online.locked ? '🔒 Locked' : 'Lock';
+        lock.title = 'Stop new players from joining';
+        if (online.locked) lock.className = 'on';
+        lock.addEventListener('click', () => this.h.onLock());
+        this.tools.append(lock);
+        for (const g of guests) {
+          const kick = document.createElement('button');
+          kick.textContent = `Kick ${g.label}`;
+          kick.addEventListener('click', () => this.h.onKick(g.id));
+          this.tools.append(kick);
+        }
+      }
     }
   }
 }

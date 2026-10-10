@@ -169,8 +169,9 @@ function browserVoice() {
   return bestVoice;
 }
 
-const lastSaid = {};
+let lastSaid = {};
 export function say(text, key = text, cooldown = 8000) {
+  if (Object.keys(lastSaid).length > 300) lastSaid = {}; // keys can come from an online host: keep it bounded
   if (audioTap.fn) audioTap.fn(['v', text, key, cooldown]);
   if (muted || !voiceOn) return;
   const now = performance.now();

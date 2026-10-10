@@ -11,6 +11,7 @@ test('the page has a strict Content Security Policy that matches its one inline 
   assert.match(csp, /default-src 'self'/);
   assert.match(csp, /object-src 'none'/);
   assert.match(csp, /base-uri 'none'/);
+  assert.doesNotMatch(csp, /localhost|127\.0\.0\.1/, 'the published page must not reach services on the player\'s computer');
   assert.doesNotMatch(csp, /script-src[^;]*'unsafe-inline'/, 'no inline scripts allowed');
   assert.doesNotMatch(csp, /script-src[^;]*'unsafe-eval'/, 'no eval allowed');
   const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
@@ -28,7 +29,7 @@ test('no outside data is ever written into the page as HTML', () => {
     for (const m of src.matchAll(/\.innerHTML\s*=\s*(`[^`]*`|'[^']*')/g)) {
       // only fixed markup: the one allowed interpolation is a number constant
       const dynamic = [...m[1].matchAll(/\$\{([^}]*)\}/g)].map((x) => x[1]);
-      assert.ok(dynamic.every((d) => d === 'CODE_LENGTH'), `${f}: innerHTML with dynamic content: ${dynamic}`);
+      assert.ok(dynamic.every((d) => /^CODE_LENGTH( \+ \d+)?$/.test(d)), `${f}: innerHTML with dynamic content: ${dynamic}`);
     }
     assert.doesNotMatch(src.replace(/\.innerHTML\s*=\s*(`[^`]*`|'[^']*')/g, ''), /\.innerHTML\s*=/, `${f}: innerHTML from a variable`);
   }

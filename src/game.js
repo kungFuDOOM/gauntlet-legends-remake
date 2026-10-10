@@ -354,6 +354,7 @@ export class Game {
   }
   text(x, y, text, color = '#fff', life = 1.2) {
     if (this.fx) this.fx.push(['t', Math.round(x), Math.round(y), text, color, life]);
+    if (this.texts.length >= 100) this.texts.shift(); // keep the screen readable (and cheap to draw)
     this.texts.push({ x, y, text, color, life, max: life });
   }
 

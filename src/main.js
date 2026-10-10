@@ -8,8 +8,8 @@ import { TouchControls } from './touch.js';
 import { Tutorial, tutorialView } from './tutorial.js';
 import { Game } from './game.js';
 import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say, stopVoice, audioTap } from './audio.js';
-import { Host, Guest } from './net.js';
-import { SnapshotWriter, SnapshotReader, playSound, cleanUi, cleanEvents } from './netstate.js';
+import { Host, Guest, showCode } from './net.js';
+import { SnapshotWriter, SnapshotReader, playSound, cleanUi, cleanEvents, cleanGame } from './netstate.js';
 import { Lobby } from './lobby.js';
 import { Renderer3D } from './render3d.js';
 import { loadAssets } from './assets.js';
@@ -164,9 +164,12 @@ function updateTitle() {
   // the PLAY ONLINE button: tap or click it, or press O
   if (!net && !lobby.isOpen && (input.key('KeyO') || taps.some((t) => titleOnlineAt(t.x, t.y)))) { initAudio(); sfx.select(); lobby.open(); return; }
   if (lobby.isOpen) { if (input.key('Escape')) lobby.close(); return; } // don't start the game under the panel
+  // Only players on this machine act here: online guests must never start a new quest
+  // (it wipes the save) or start the host's game for them.
+  const guests = [...input.remote.keys()];
   const anyKey = input.frameGlobal && [...input.frameGlobal].some((k) => !TITLE_IGNORE.test(k));
-  const atk = input.firstPressed('attack') || (input.anyStart() && input.sources().find((id) => input.get(id).pressed.start)) || (anyKey && 'kb');
-  if (input.firstPressed('magic') && hasProgress(save)) { initAudio(); setState('confirm'); return; }
+  const atk = input.firstPressed('attack', guests) || input.sources().find((id) => !isNet(id) && input.get(id).pressed.start) || (anyKey && 'kb');
+  if (input.firstPressed('magic', guests) && hasProgress(save)) { initAudio(); setState('confirm'); return; }
   if (atk) {
     initAudio();
     sfx.join();
@@ -178,8 +181,9 @@ function updateTitle() {
 }
 
 function updateConfirm() {
-  if (input.firstPressed('attack')) { save = newSave(); writeSave(save); toast = { text: 'A new quest begins', t: 2 }; setState('title'); }
-  else if (anyBack()) setState('title');
+  // wiping the save: the host's own players only
+  if (input.firstPressed('attack', [...input.remote.keys()])) { save = newSave(); writeSave(save); toast = { text: 'A new quest begins', t: 2, local: true }; setState('title'); }
+  else if (input.sources().some((id) => !isNet(id) && backPressed(id))) setState('title');
 }
 
 // ---------- hero select ----------
@@ -336,7 +340,25 @@ function updateRealmPick() {
 
 let net = null; // host: { role, link, code, writer, fx, sendT } · guest: { role, link, code, me, reader, ui }
 function isNet(src) { return src.startsWith('net'); }
-const lobby = new Lobby({ onHost: hostOnline, onJoin: joinOnline, onLeave: () => leaveOnline('You left the online game.') });
+const lobby = new Lobby({
+  onHost: hostOnline,
+  onJoin: joinOnline,
+  onLeave: () => leaveOnline('You left the online game.'),
+  onKick: (id) => { if (net && net.role === 'host') net.link.kick(id); },
+  onLock: () => {
+    if (!net || net.role !== 'host') return;
+    net.link.locked = !net.link.locked;
+    toast = { text: net.link.locked ? 'Room locked: no new players can join' : 'Room unlocked', t: 2.5, local: true };
+  },
+});
+
+// How the host's room bar names each online player ("P2", or "guest" before they pick a hero).
+function guestList() {
+  return net.link.guests.map((id) => {
+    const i = game ? game.players.findIndex((p) => p && p.source === id) : slots.findIndex((x) => x && x.source === id);
+    return { id, label: i >= 0 ? `P${i + 1}` : 'guest' };
+  });
+}
 
 async function hostOnline() {
   initAudio();
@@ -354,7 +376,7 @@ async function hostOnline() {
     const code = await link.start();
     net = { role: 'host', link, code, writer: new SnapshotWriter(), fx: [], sendT: 0 };
     audioTap.fn = (ev) => { if (net && net.role === 'host' && net.link.count) net.fx.push(ev); };
-    toast = { text: `You're hosting! Room code: ${code}`, t: 5, local: true };
+    toast = { text: `You're hosting! Room code: ${showCode(code)}`, t: 5, local: true };
   } catch (err) {
     lobby.say(err.message);
     link.close();
@@ -379,7 +401,7 @@ async function joinOnline(code) {
   const link = new Guest({ onMessage: guestMessage, onClose: (reason) => leaveOnline(reason) });
   try {
     const me = await link.join(code);
-    net = { role: 'guest', link, code: code.toUpperCase(), me, reader: new SnapshotReader(Game), ui: {}, sendT: 0 };
+    net = { role: 'guest', link, code: code.toUpperCase(), me, reader: new SnapshotReader(Game), ui: {}, sendT: 0, joinedAt: performance.now() };
     Input.me = me;
     game = null; tutorial = null; story = null; slots = [];
     toast = { text: 'Connected! Press Attack to join the party.', t: 4, local: true };
@@ -431,10 +453,11 @@ function hostSend(dt) {
 function guestMessage(m) {
   if (!net || m.t !== 's') return;
   try {
-    const ui = cleanUi(m.st, m.ui);
-    if (!ui) return;
+    const ui = cleanUi(m.st, m.ui, !!cleanGame(m.g));
+    if (!ui) return; // malformed, or a screen without the data it needs: ignore it
+    net.heardAt = performance.now();
     // keep our own clock for the screen's animations; only resync when it drifts
-    const stT = Number(m.stT) || 0;
+    const stT = Math.min(1e5, Math.max(0, Number(m.stT) || 0));
     if (state !== m.st || Math.abs(stateT - stT) > 0.5) stateT = stT;
     state = m.st;
     net.ui = ui;
@@ -456,6 +479,8 @@ function guestMessage(m) {
 
 // Guest: everything on this device (keys, touch, gamepad) drives this guest's one hero.
 function guestFrame(dt) {
+  // a host that goes silent (gone, or hostile) doesn't leave us stuck on its last screen
+  if (performance.now() - (net.heardAt || net.joinedAt) > 15000) { leaveOnline('Lost the connection to the host.'); return; }
   let x = 0, y = 0, a = false, mg = false, u = false, st = false;
   for (const s of Object.values(input.state)) {
     if (!x && !y) { x = s.x; y = s.y; }
@@ -498,8 +523,23 @@ function updateMagicHint(dt) {
   }
 }
 
+// Start pressed by anyone; an online guest can only pause or resume every couple of
+// seconds, so one can't keep flipping the game in and out of pause.
+const netPauseAt = new Map();
+function startPressed() {
+  for (const id of input.sources()) {
+    if (!input.get(id).pressed.start) continue;
+    if (!isNet(id)) return true;
+    const now = performance.now();
+    if (now - (netPauseAt.get(id) || -1e9) < 2000) continue;
+    netPauseAt.set(id, now);
+    return true;
+  }
+  return false;
+}
+
 function updatePlay(dt) {
-  if (input.key('Escape') || input.key('KeyP') || input.anyStart()) { setState('paused'); return; }
+  if (input.key('Escape') || input.key('KeyP') || startPressed()) { setState('paused'); return; }
 
   // Drop-in join / continue
   const used = game.allPlayers().map((p) => p.source);
@@ -636,7 +676,7 @@ function render() {
   } else if (state === 'title' || state === 'confirm') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
     drawTitle(ctx, stateT, hiscores, hasProgress(save) ? save.progress : null, !net && state === 'title');
-    if (guest) drawOverlay(ctx, `ROOM ${net.code}`, ['Connected! Waiting for the host to start...', `Press ${btn('attack')} to join the party`], '#8fe0ff');
+    if (guest) drawOverlay(ctx, `ROOM ${showCode(net.code)}`, ['Connected! Waiting for the host to start...', `Press ${btn('attack')} to join the party`], '#8fe0ff');
     if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
@@ -722,7 +762,9 @@ function frame(now) {
   if (input.key('KeyN')) { initAudio(); toast = { text: toggleMusic() ? 'Music ON' : 'Music OFF', t: 1.5, local: true }; }
   playMusic(currentTrack());
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
-  lobby.update(state, net && { role: net.role, code: net.code, players: net.role === 'host' ? net.link.count : 0 });
+  lobby.update(state, net && (net.role === 'host'
+    ? { role: 'host', code: net.code, players: net.link.count, guests: guestList(), locked: net.link.locked }
+    : { role: 'guest', code: net.code }));
   if (net && net.role === 'guest') {
     guestFrame(dt);
     taps.length = 0;
@@ -740,7 +782,7 @@ function frame(now) {
     case 'ending': updateEnding(); break;
     case 'play': updatePlay(dt); break;
     case 'paused':
-      if (input.key('Escape') || input.key('KeyP') || input.anyStart()) setState('play');
+      if (input.key('Escape') || input.key('KeyP') || startPressed()) setState('play');
       // quit: Q on the keyboard (Esc resumes), B on a gamepad, MAGIC on the touch screen
       // (online guests can pause and resume, but only the host's own players can quit)
       else if (input.key('KeyQ') || partySources().some((src) => !isNet(src) && (!isKb(src) || input.lastDevice === 'touch') && input.get(src).pressed.magic)) {
