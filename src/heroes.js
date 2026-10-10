@@ -220,6 +220,16 @@ function faceTex(f) {
     } else if (f.stubble) {
       soft(cx, 172, 36, 28, f.stubble, 0.22);
     }
+    if (f.fangs) { // monsters: fangs over the lower lip
+      ctx.fillStyle = '#f4ecd8';
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cx + s * 4, 160); ctx.lineTo(cx + s * 10, 160); ctx.lineTo(cx + s * 7, 170); ctx.fill(); }
+    }
+    if (f.scars) { // zombies: stitches and rot
+      ctx.strokeStyle = shade(f.skin, -0.3); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx + 30, 70); ctx.lineTo(cx + 46, 140); ctx.stroke();
+      for (let i = 0; i < 5; i++) { const y = 80 + i * 13; ctx.beginPath(); ctx.moveTo(cx + 30 + i * 3, y); ctx.lineTo(cx + 40 + i * 3, y - 3); ctx.stroke(); }
+      soft(cx - 30, 80, 18, 12, shade(f.skin, -0.25), 0.5);
+    }
   });
 }
 
@@ -794,3 +804,10 @@ export function buildHero(cls, rig) {
   HEROES[cls](rig);
   return hipsHeight(RIGS[HERO_RIG[cls]]) / BASE_HIPS;
 }
+
+// The building blocks, for the monsters (monsters.js) built the same way.
+export const kit = {
+  RIGS, BODIES, applyRig, hipsHeight, BASE_HIPS, mat, metal, shade, stripes, strands, canvasTex, cached, add, lathe, limb,
+  sphere, box, cap, CAP_TILT, cylinder, cone, torus, shapeGeo, roundedBox, body, hairLong, bracer, flap, belt, boots, horns,
+  greatAxe, sword, shield, bow, staff, hammer, dagger,
+};

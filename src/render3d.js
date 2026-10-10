@@ -3,10 +3,11 @@
 // on the ground plane (sim x -> world X, sim y -> world Z), as in the arcade original.
 
 import * as THREE from 'three';
-import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS } from './config.js';
+import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS, LOBBED, ENEMIES } from './config.js';
 import { T } from './level.js';
-import { assets, Actor, cloneProp, MODEL_SCALE } from './assets.js';
-import { capTexture, crackedTexture, grassTexture, lavaTexture, glowTexture, glowSprite, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
+import { assets, Actor, cloneProp, MODEL_SCALE, HERO_SCALE } from './assets.js';
+import { buildCreature } from './monsters.js';
+import { capTexture, crackedTexture, grassTexture, lavaTexture, glowTexture, glowSprite, webTexture, buildBoss, buildExit, buildProjectile, buildMarker, buildItem, heroColor } from './models.js';
 
 const WALL_H = 52;
 const CAM_OFFSET = new THREE.Vector3(0, 380, 240);
@@ -38,12 +39,30 @@ const HERO_STYLE = {
   tigress: { idle: 'Idle', melee: '1H_Melee_Attack_Slice_Diagonal', shoot: 'Throw', turbo: '2H_Melee_Attack_Spinning', meleeSpeed: 2.6, shootSpeed: 2.8 },
 };
 
+// How each monster looks: a KayKit skeleton (model), a built monster ('m_' + type, see
+// monsters.js) or a procedural creature (proc), plus its walk cycle and size.
 const ENEMY_STYLE = {
+  goblin: { model: 'm_goblin', walk: 'Running_A', walkSpeed: 1.7, scale: 1 },
+  bat: { proc: 'bat', float: true, scale: 1.5 },
+  bomber: { model: 'm_bomber', walk: 'Running_A', walkSpeed: 1.5, scale: 1 },
+  orc: { model: 'm_orc', walk: 'Walking_A', walkSpeed: 1.25, scale: 1.12 },
+  shaman: { model: 'm_shaman', walk: 'Walking_A', walkSpeed: 1.6, scale: 1 },
   grunt: { model: 'skeleton_minion', weapon: 'weapon_blade', walk: 'Walking_D_Skeletons', walkSpeed: 1.6, scale: 1 },
   ghost: { model: 'skeleton_minion', ghost: true, walk: 'Running_C', walkSpeed: 1.2, scale: 0.95, float: true },
+  archer: { model: 'skeleton_rogue', weapon: 'weapon_crossbow', walk: 'Running_C', walkSpeed: 1.3, scale: 0.92, shoot: '1H_Ranged_Shoot' },
   lobber: { model: 'skeleton_rogue', walk: 'Running_C', walkSpeed: 1.3, scale: 0.85 },
-  demon: { model: 'skeleton_warrior', weapon: 'weapon_axe', tint: '#ff7a60', eyes: '#ffcc00', walk: 'Running_A', walkSpeed: 1.3, scale: 1.08, horns: '#e8dcb8' },
+  knight: { model: 'm_knight', walk: 'Walking_A', walkSpeed: 1.15, scale: 1.08, melee: '1H_Melee_Attack_Slice_Diagonal' },
   sorcerer: { model: 'skeleton_mage', weapon: 'weapon_staff', tint: '#d8a0ff', eyes: '#ff40ff', walk: 'Walking_A', walkSpeed: 1.4, scale: 1 },
+  zombie: { model: 'm_zombie', walk: 'Walking_D_Skeletons', walkSpeed: 1.05, scale: 1, melee: 'Unarmed_Melee_Attack_Punch_A' },
+  wraith: { model: 'skeleton_mage', ghost: '#30ff90', walk: 'Running_C', walkSpeed: 1.2, scale: 1, float: true },
+  spider: { proc: 'spider', scale: 1 },
+  plaguer: { model: 'm_plaguer', walk: 'Walking_A', walkSpeed: 1.5, scale: 1 },
+  witch: { model: 'm_witch', walk: 'Walking_A', walkSpeed: 1.5, scale: 1 },
+  imp: { model: 'm_imp', walk: 'Running_A', walkSpeed: 1.8, scale: 1, melee: '1H_Melee_Attack_Stab' },
+  skull: { proc: 'skull', float: true, scale: 1.5 },
+  hound: { proc: 'hound', scale: 1.15 },
+  demon: { model: 'm_demon', walk: 'Walking_A', walkSpeed: 1.2, scale: 1.15 },
+  warlock: { model: 'm_warlock', walk: 'Walking_A', walkSpeed: 1.4, scale: 1 },
   death: { model: 'skeleton_mage', weapon: 'weapon_staff', tint: '#3a3440', eyes: '#ff1010', walk: 'Walking_A', walkSpeed: 1.2, scale: 1.25 },
 };
 
@@ -215,7 +234,7 @@ export class Renderer3D {
     const floorKinds = style === 'canyon' || style === 'inferno'
       ? [['dirt_a', 0.3], ['dirt_b', 0.25], ['dirt_c', 0.2], ['dirt_d', 0.15], ['dirt_weeds', style === 'canyon' ? 0.1 : 0.0001]]
       : [['floor', 0.76], ['floor_broken_a', 0.1], ['floor_broken_b', 0.09], ['floor_weeds', style === 'sky' ? 0.0001 : 0.03], ['floor_decorated', 0.02]];
-    const floorTint = style === 'inferno' ? '#c88870' : style === 'sky' ? '#e8eef4' : null;
+    const floorTint = th.floorTint || (style === 'inferno' ? '#c88870' : style === 'sky' ? '#e8eef4' : null);
     const floors = Object.fromEntries(floorKinds.map(([k]) => [k, []]));
     const grass = [], bridges = [], lava = [], slabs = [];
     for (let ty = 0; ty < h; ty++)
@@ -235,7 +254,8 @@ export class Renderer3D {
     this.instanced(group, 'floor_wood', bridges);
     if (grass.length) this.instancedPrim(group, new THREE.PlaneGeometry(32, 32), new THREE.MeshStandardMaterial({ map: grassTexture(), roughness: 1 }), grass);
     if (lava.length) {
-      const lm = new THREE.MeshBasicMaterial({ map: lavaTexture(), color: style === 'inferno' ? '#ffffff' : '#ffe0c0' });
+      const souls = th.hazard === 'souls';
+      const lm = new THREE.MeshBasicMaterial({ map: lavaTexture(souls ? 'souls' : 'lava'), color: style === 'inferno' || souls ? '#ffffff' : '#ffe0c0' });
       this.lavaMats.push(lm);
       this.instancedPrim(group, new THREE.PlaneGeometry(32, 32), lm, lava);
       // rocky lips around the lava so it reads as a sunken channel
@@ -248,7 +268,7 @@ export class Renderer3D {
             if (n === T.LAVA || n === T.BRIDGE || n === T.WALL) continue;
             lips.push({ x: tx * TILE + 16 + dx * 15, y: 0, z: ty * TILE + 16 + dy * 15, sx: dx ? 4 : 17, sy: 3, sz: dy ? 4 : 17, ry: rnd(tx, ty, dx + 2 * dy) * 0.6, color: th.rock });
           }
-          if (rnd(tx, ty, 9) < 0.06) this.torches.push({ x: tx * TILE + 16, z: ty * TILE + 16, y: 18, color: '#ff5a10', power: 70 });
+          if (rnd(tx, ty, 9) < 0.06) this.torches.push({ x: tx * TILE + 16, z: ty * TILE + 16, y: 18, color: souls ? '#5070ff' : '#ff5a10', power: 70 });
         }
       this.instancedPrim(group, new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 1 }), lips);
     }
@@ -272,7 +292,7 @@ export class Renderer3D {
             wallFaces.push({ tx, ty, dx, dy, x, z });
           }
         }
-      for (const [k, list] of Object.entries(walls)) this.instanced(group, k, list);
+      for (const [k, list] of Object.entries(walls)) this.instanced(group, k, list, th.wallTint || null);
       this.addCaps(group, g, WALL_H + 0.3, th.wallTop, '#5a5550', (x, y) => !this.isPillar(g, x, y));
       const pillars = [];
       for (let ty = 0; ty < h; ty++) for (let tx = 0; tx < w; tx++) if (isWall(tx, ty) && this.isPillar(g, tx, ty)) pillars.push({ x: tx * TILE + 16, z: ty * TILE + 16, sx: S * 0.42, sy: S * 0.42 * 1.1, sz: S * 0.42 });
@@ -296,7 +316,7 @@ export class Renderer3D {
           if (orth) wallFaces.push({ tx, ty: ty + (open(tx, ty + 1) ? 1 : 0), dx: 0, dy: open(tx, ty + 1) ? -1 : 0, x: tx * TILE + 16, z: ty * TILE + 16 });
         }
       this.instancedPrim(group, new THREE.DodecahedronGeometry(1, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, roughness: 1 }), rocks);
-      this.addCaps(group, g, 34, th.rock, style === 'inferno' ? '#3a1a14' : '#5a4632');
+      this.addCaps(group, g, 34, th.cap || th.rock, th.cap ? '#c8d0e0' : style === 'inferno' ? '#3a1a14' : '#5a4632');
     } else {
       // sky: islands are thick slabs of rock hanging in the clouds; WALL tiles are ruined columns
       this.instancedPrim(group, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true }), slabs);
@@ -383,8 +403,8 @@ export class Renderer3D {
         if (f.dy !== -1) continue;
         const r = rnd(f.tx * 3 + 11, f.ty * 5 + 7);
         if (r < 0.2 && !torchSpots.some((p) => Math.abs(p.tx - f.tx) + Math.abs(p.ty - f.ty) < 5)) torchSpots.push(f);
-        else if (r > 0.93) {
-          const b = cloneProp(rnd(f.tx, f.ty) < 0.5 ? 'banner_red' : 'banner_blue');
+        else if (r > 1 - (th.banners ?? 0.07)) {
+          const b = cloneProp(th.bannerColor === 'red' || rnd(f.tx, f.ty) < 0.5 ? 'banner_red' : 'banner_blue');
           b.scale.set(S * 0.5, S * 0.42, S * 0.5);
           b.position.set(f.x, 0, f.ty * TILE - 8);
           group.add(b);
@@ -394,10 +414,10 @@ export class Renderer3D {
         const t = cloneProp('torch');
         t.scale.setScalar(S);
         t.position.set(f.x, 30, f.ty * TILE);
-        const halo = glowSprite('#ffa040', 46, 0.75);
+        const halo = glowSprite(th.lantern || '#ffa040', 46, 0.75);
         halo.position.set(f.x, 42, f.ty * TILE + 8);
         group.add(t, halo);
-        this.torches.push({ x: f.x, z: f.ty * TILE + 10, y: 46, halo, color: '#ff9a50', power: 110 });
+        this.torches.push({ x: f.x, z: f.ty * TILE + 10, y: 46, halo, color: th.lantern || '#ff9a50', power: 110 });
       }
     } else {
       // standing lanterns along the paths
@@ -419,21 +439,22 @@ export class Renderer3D {
         l.position.set(tx * TILE + 16, 0, ty * TILE + 16);
         l.rotation.y = rnd(tx, ty, 2) * 6.28;
         const hy = tall ? 30 : 12;
-        const halo = glowSprite(style === 'inferno' ? '#ff6a20' : '#ffc060', 40, 0.7);
+        const lc = th.lantern || (style === 'inferno' ? '#ff6a30' : '#ffb060');
+        const halo = glowSprite(lc, 40, 0.7);
         halo.position.set(tx * TILE + 16, hy, ty * TILE + 16);
         group.add(l, halo);
-        this.torches.push({ x: tx * TILE + 16, z: ty * TILE + 16, y: hy + 14, halo, color: style === 'inferno' ? '#ff6a30' : '#ffb060', power: 95 });
+        this.torches.push({ x: tx * TILE + 16, z: ty * TILE + 16, y: hy + 14, halo, color: lc, power: 95 });
       }
     }
 
     // clutter: realm-specific props scattered in corners and along edges
-    const deco = {
+    const deco = th.deco || {
       castle: { corner: ['barrel_stack', 'crates', 'keg'], scatter: ['bones_a', 'skull'] },
       canyon: { corner: ['tree_dead_small', 'tree_dead_medium', 'rubble'], scatter: ['bones_a', 'bones_b', 'skull'] },
       inferno: { corner: ['tree_dead_medium', 'skull_candle', 'ribcage'], scatter: ['bones_a', 'bones_b', 'skull', 'ribcage'] },
       sky: { corner: ['gravestone', 'grave', 'fence'], scatter: ['bones_a', 'skull', 'candles'] },
     }[style];
-    const SCALE = { barrel_stack: 0.5, crates: 0.5, keg: 0.5, tree_dead_small: 0.9, tree_dead_medium: 0.8, rubble: 0.22, skull_candle: 0.55, ribcage: 0.45, gravestone: 0.7, grave: 0.6, fence: 0.5, bones_a: 0.45, bones_b: 0.45, skull: 0.3, candles: 0.6 };
+    const SCALE = { barrel_stack: 0.5, crates: 0.5, keg: 0.5, tree_dead_small: 0.9, tree_dead_medium: 0.8, rubble: 0.22, skull_candle: 0.55, ribcage: 0.45, gravestone: 0.7, grave: 0.6, fence: 0.5, bones_a: 0.45, bones_b: 0.45, skull: 0.3, candles: 0.6, coffin: 0.55, sword_shield: 0.6, pumpkin: 0.6, column: 0.5 };
     const wallish = style === 'sky' ? isVoid : isWall;
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++) {
@@ -451,6 +472,9 @@ export class Renderer3D {
         if (style === 'inferno' && k.startsWith('tree')) p.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiply(new THREE.Color('#5a3a30')); } });
         group.add(p);
       }
+
+    this.addFeatures(group, g, th, wallish, rnd);
+    this.setAmbient(th.particles);
 
     // ---- exit portal flanked by candles (the hub has a portal per realm instead) ----
     this.exit = null;
@@ -508,6 +532,110 @@ export class Renderer3D {
     } else this.merchant = null;
   }
 
+  // Each stage's own dressing (STAGE_LOOKS features in level.js), scattered along the walls.
+  addFeatures(group, g, th, wallish, rnd) {
+    if (!th.features) return;
+    const spots = [];
+    for (let ty = 1; ty < g.h - 1; ty++)
+      for (let tx = 1; tx < g.w - 1; tx++) {
+        if (g.tile(tx, ty) !== T.FLOOR) continue;
+        const wN = wallish(tx, ty - 1), wW = wallish(tx - 1, ty), wE = wallish(tx + 1, ty), wS = wallish(tx, ty + 1);
+        if (wN || wW || wE || wS) spots.push({ tx, ty, wN, wW, wE, wS });
+      }
+    const pick = (f, k) => spots.filter((s) => rnd(s.tx * 29 + k, s.ty * 43 + k * 7) < f.rate);
+    th.features.forEach((f, k) => {
+      const at = pick(f, k + 1);
+      const px = (s, j = 0) => s.tx * TILE + 16 + (s.wW ? -9 : s.wE ? 9 : (rnd(s.tx, s.ty, j + 40) - 0.5) * 14);
+      const pz = (s, j = 0) => s.ty * TILE + 16 + (s.wN ? -9 : s.wS ? 9 : (rnd(s.tx, s.ty, j + 41) - 0.5) * 14);
+      if (f.kind === 'crystal') {
+        const list = [];
+        for (const s of at) for (let j = 0; j < 3; j++) {
+          const h = 10 + rnd(s.tx, s.ty, j + 50) * 18;
+          list.push({ x: px(s, j) + (j - 1) * 4, y: h / 2, z: pz(s, j) + ((j * 5) % 3 - 1) * 4, sx: 3 + j, sy: h, sz: 3 + j, rx: (j - 1) * 0.35, rz: (rnd(s.tx, s.ty, j) - 0.5) * 0.6 });
+        }
+        this.instancedPrim(group, new THREE.ConeGeometry(1, 1, 5), new THREE.MeshStandardMaterial({ color: f.color, emissive: f.color, emissiveIntensity: 0.9, roughness: 0.2, metalness: 0.1, flatShading: true, transparent: true, opacity: 0.88 }), list);
+        at.filter((_, i) => i % 3 === 0).forEach((s) => this.torches.push({ x: px(s), z: pz(s), y: 14, color: f.color, power: 45 }));
+      } else if (f.kind === 'mushroom') {
+        const stems = [], caps = [];
+        for (const s of at) for (let j = 0; j < 2; j++) {
+          const h = 8 + rnd(s.tx, s.ty, j + 60) * 16, r = 6 + rnd(s.tx, s.ty, j + 61) * 8;
+          const x = px(s, j) + j * 7, z = pz(s, j) - j * 5;
+          stems.push({ x, y: h / 2, z, sx: 2, sy: h, sz: 2 });
+          caps.push({ x, y: h, z, sx: r, sy: r * 0.55, sz: r });
+        }
+        this.instancedPrim(group, new THREE.CylinderGeometry(1, 1.3, 1, 6), new THREE.MeshStandardMaterial({ color: '#e8e0c8', roughness: 0.9, flatShading: true }), stems);
+        this.instancedPrim(group, new THREE.SphereGeometry(1, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: f.color, emissive: f.color, emissiveIntensity: 0.35, roughness: 0.6, flatShading: true }), caps);
+      } else if (f.kind === 'brazier') {
+        const bowls = [];
+        for (const s of at) {
+          bowls.push({ x: px(s), y: 9, z: pz(s), sx: 7, sy: 6, sz: 7 });
+          const halo = glowSprite('#ff8a30', 50, 0.8);
+          halo.position.set(px(s), 22, pz(s));
+          group.add(halo);
+          this.torches.push({ x: px(s), z: pz(s), y: 26, halo, color: '#ff8a40', power: 100 });
+        }
+        this.instancedPrim(group, new THREE.CylinderGeometry(1, 0.55, 1, 8), new THREE.MeshStandardMaterial({ color: '#3a3438', metalness: 0.6, roughness: 0.5 }), bowls);
+        this.instancedPrim(group, new THREE.CylinderGeometry(0.25, 0.4, 1, 6), new THREE.MeshStandardMaterial({ color: '#2a2428', metalness: 0.6, roughness: 0.5 }), bowls.map((b) => ({ ...b, y: 3, sx: 3, sy: 6, sz: 3 })));
+      } else if (f.kind === 'chains') {
+        const links = [];
+        for (const s of at) {
+          if (!s.wN) continue;
+          for (let j = 0; j < 7; j++) links.push({ x: s.tx * TILE + 10 + (j % 2) * 0.1, y: 44 - j * 4.2, z: s.ty * TILE - 2, sx: 1.6, sy: 2.4, sz: 1.6, ry: j % 2 ? Math.PI / 2 : 0 });
+        }
+        this.instancedPrim(group, new THREE.TorusGeometry(1, 0.35, 4, 8), new THREE.MeshStandardMaterial({ color: '#6a6a72', metalness: 0.8, roughness: 0.4 }), links);
+      } else if (f.kind === 'web') {
+        const webs = [];
+        for (const s of at) {
+          if (!(s.wN && (s.wW || s.wE))) continue;
+          webs.push({ x: s.tx * TILE + 16 + (s.wW ? -10 : 10), y: 34, z: s.ty * TILE + 2, sx: 18, sy: 18, sz: 1, ry: s.wW ? 0.6 : -0.6 });
+        }
+        this.instancedPrim(group, new THREE.CircleGeometry(1, 8), new THREE.MeshBasicMaterial({ map: webTexture(), transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }), webs);
+      }
+    });
+  }
+
+  // Drifting particles that fill the air around the camera (embers, snow, ash, spores...).
+  setAmbient(spec) {
+    if (this.ambient) { this.scene.remove(this.ambient.points); this.ambient = null; }
+    if (!spec) return;
+    const n = Math.round(spec.count * (LOW_POWER ? 0.6 : 1));
+    const pos = new Float32Array(n * 3), seed = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 1000; pos[i * 3 + 1] = Math.random() * 220; pos[i * 3 + 2] = (Math.random() - 0.5) * 800;
+      seed.set([Math.random(), Math.random(), Math.random(), Math.random()], i * 4);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const additive = !['snow', 'ash'].includes(spec.type);
+    const size = { snow: 13, ash: 11, embers: 15, sparks: 10, motes: 12, spores: 14, wisps: 34, souls: 30, drips: 8 }[spec.type] || 12;
+    const mat = new THREE.PointsMaterial({ size, map: glowTexture(), color: spec.color, transparent: true, depthWrite: false, opacity: additive ? 0.9 : 0.75, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+    const points = new THREE.Points(geo, mat);
+    points.frustumCulled = false;
+    this.scene.add(points);
+    this.ambient = { points, pos, seed, n, type: spec.type };
+  }
+
+  updateAmbient(dt, t) {
+    const A = this.ambient;
+    if (!A) return;
+    const { pos, seed, n, type } = A;
+    // fall / rise speed and sideways sway per kind
+    const [vy, sway, swayF] = { snow: [-40, 18, 1], ash: [-14, 22, 0.6], embers: [36, 14, 2], sparks: [70, 24, 4], motes: [5, 10, 0.5], spores: [8, 16, 0.8], wisps: [6, 30, 0.4], souls: [24, 8, 1.2], drips: [-120, 0, 0] }[type] || [0, 10, 1];
+    const cx = this.camX, cz = this.camZ;
+    for (let i = 0; i < n; i++) {
+      const k = i * 3, s = seed[i * 4], s2 = seed[i * 4 + 1];
+      pos[k + 1] += vy * (0.6 + s * 0.8) * dt;
+      pos[k] += Math.sin(t * swayF + s * 40) * sway * dt + (type === 'snow' || type === 'ash' ? 10 * dt : 0);
+      pos[k + 2] += Math.cos(t * swayF * 0.7 + s2 * 40) * sway * 0.5 * dt;
+      // wrap round a box that follows the camera
+      if (pos[k + 1] < 0) pos[k + 1] += 220; else if (pos[k + 1] > 220) pos[k + 1] -= 220;
+      let dx = pos[k] - cx; if (dx < -500) pos[k] += 1000; else if (dx > 500) pos[k] -= 1000;
+      let dz = pos[k + 2] - cz; if (dz < -400) pos[k + 2] += 800; else if (dz > 400) pos[k + 2] -= 800;
+    }
+    A.points.geometry.attributes.position.needsUpdate = true;
+    A.points.material.opacity = type === 'wisps' || type === 'souls' ? 0.6 + Math.sin(t * 2) * 0.25 : A.points.material.opacity;
+  }
+
   // A lone wall tile with open floor on all four sides (courtyard pillars, island ruins).
   isPillar(g, tx, ty) {
     const o = (x, y) => { const t = g.tile(x, y); return t !== T.WALL && t !== T.VOID; };
@@ -549,9 +677,17 @@ export class Renderer3D {
   }
 
   makeEnemy(e) {
-    const st = ENEMY_STYLE[e.type];
+    const st = ENEMY_STYLE[e.type] || ENEMY_STYLE.grunt;
+    if (st.proc) {
+      const root = new THREE.Group();
+      const model = buildCreature(st.proc, st.proc === 'skull' ? cloneProp('skull') : null);
+      model.scale.setScalar(st.scale);
+      root.add(model);
+      if (!st.float) this.blob(root, st.proc === 'spider' ? 46 : 36);
+      return { kind: 'enemy', root, proc: model, style: st };
+    }
     const a = new Actor(st.model, { tint: st.tint, ghost: st.ghost, emissiveEyes: st.eyes });
-    a.model.scale.setScalar(S * st.scale);
+    a.model.scale.setScalar((a.adult ? HERO_SCALE : S) * st.scale);
     if (st.weapon) a.attach(st.weapon, 'handslot.r');
     if (st.horns) addHorns(a, st.horns, 0.12, 0.6, 0.35);
     if (!st.float) this.blob(a.root, 30 * st.scale);
@@ -581,17 +717,45 @@ export class Renderer3D {
   makeGenerator(gen) {
     const root = new THREE.Group();
     const add = (name, s, x = 0, y = 0, z = 0, ry = 0) => { const p = cloneProp(name); p.scale.setScalar(S * s); p.position.set(x, y, z); p.rotation.y = ry; root.add(p); return p; };
-    const colors = { grunt: '#ff8a30', ghost: '#a0c0ff', lobber: '#b0ff40', demon: '#ff3020', sorcerer: '#e040ff', death: '#ffffff' };
+    const tint = (o, c) => { o.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); m.material.color.multiply(new THREE.Color(c)); } }); return o; };
+    const bonePile = () => { add('ribcage', 0.55, 0, 6, 0); add('bones_a', 0.6, -8, 2, 6, 0.6); add('bones_b', 0.6, 7, 2, -6, 2.1); add('bones_a', 0.6, 4, 2, 8, 1.2); add('skull', 0.45, 0, 10, 2); };
+    // each monster comes out of something that suits it: a goblin camp, a grave, a nest...
     switch (gen.type) {
+      case 'goblin': add('crates', 0.5); add('banner_red', 0.35, -12, 0, -6); add('skull', 0.3, 10, 0, 10); break;
+      case 'bat': add('rubble', 0.32); add('bones_b', 0.5, 8, 2, 8, 1); break;
+      case 'bomber': add('barrel_stack', 0.45); add('keg', 0.4, 14, 0, 8); break;
+      case 'orc': add('tree_dead_medium', 0.6); add('skull', 0.4, 0, 22, 4); add('bones_a', 0.6, 8, 2, 8); break;
+      case 'shaman': tint(add('shrine', 0.8), '#90ff80'); add('skull_candle', 0.45, 10, 0, 8); break;
       case 'ghost': add('grave', 0.75, 0, 0, -2); add('skull', 0.3, 9, 0, 9); break;
-      case 'sorcerer': add('shrine', 0.8); add('skull_candle', 0.45, 10, 0, 8); break;
-      case 'demon': add('coffin', 0.6, 0, 0, 0, Math.PI / 2); add('skull_candle', 0.5, 0, 9, 0); break;
+      case 'archer': add('sword_shield', 0.6); add('bones_a', 0.6, 8, 2, 8); break;
       case 'lobber': add('crates', 0.55); add('skull', 0.3, 10, 0, 10); break;
-      default: // grunt: a heap of bones with a skull on top
-        add('ribcage', 0.55, 0, 6, 0); add('bones_a', 0.6, -8, 2, 6, 0.6); add('bones_b', 0.6, 7, 2, -6, 2.1);
-        add('bones_a', 0.6, 4, 2, 8, 1.2); add('skull', 0.45, 0, 10, 2);
+      case 'knight': add('sword_shield', 0.7); add('banner_blue', 0.35, -12, 0, -6); break;
+      case 'sorcerer': add('shrine', 0.8); add('skull_candle', 0.45, 10, 0, 8); break;
+      case 'zombie': add('grave', 0.8, 0, 0, -2); add('gravestone', 0.6, -12, 0, -10); add('bones_b', 0.5, 8, 2, 8); break;
+      case 'wraith': add('gravestone', 0.75); add('candles', 0.6, 10, 0, 8); break;
+      case 'spider': { // a nest of eggs in old bones
+        add('ribcage', 0.5, 0, 4, 0);
+        const egg = new THREE.MeshStandardMaterial({ color: '#e8e4d0', roughness: 0.6, flatShading: true });
+        for (let i = 0; i < 7; i++) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), egg); m.scale.set(5, 6, 5); m.position.set(Math.cos(i * 2.4) * (4 + i), 4, Math.sin(i * 2.4) * (4 + i)); root.add(m); }
+        break;
+      }
+      case 'plaguer': add('coffin', 0.6, 0, 0, 0, Math.PI / 2); add('skull_candle', 0.5, 0, 9, 0); break;
+      case 'witch': { // a bubbling cauldron
+        const pot = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8, 0, Math.PI * 2, Math.PI * 0.35, Math.PI * 0.65), new THREE.MeshStandardMaterial({ color: '#202024', metalness: 0.6, roughness: 0.5, side: THREE.DoubleSide }));
+        pot.scale.setScalar(13); pot.position.y = 11; root.add(pot);
+        const brew = new THREE.Mesh(new THREE.CircleGeometry(10.5, 14).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#60ff40', emissive: '#40ff20', emissiveIntensity: 1.5 }));
+        brew.position.y = 16; root.add(brew);
+        add('candles', 0.5, 16, 0, 8);
+        break;
+      }
+      case 'imp': add('skull_candle', 0.6); add('ribcage', 0.45, 10, 4, 6); break;
+      case 'skull': add('skull', 0.45, 0, 0, 0); add('skull', 0.4, 8, 0, 6, 1); add('skull', 0.4, -7, 0, 5, 2); add('skull', 0.38, 0, 7, 3); add('candles', 0.5, 12, 0, -8); break;
+      case 'hound': bonePile(); add('rubble', 0.2, -10, 0, -10); break;
+      case 'demon': tint(add('shrine', 0.85), '#ff7060'); add('skull_candle', 0.5, 12, 0, 8); add('skull_candle', 0.5, -12, 0, 8); break;
+      case 'warlock': tint(add('shrine', 0.8), '#6a4060'); add('candles', 0.6, 10, 0, 8); break;
+      default: bonePile(); // skeletons
     }
-    const halo = glowSprite(colors[gen.type] || '#fff', 54, 0.5);
+    const halo = glowSprite(ENEMIES[gen.type] ? ENEMIES[gen.type].color : '#fff', 54, 0.5);
     halo.position.y = 14;
     root.add(halo);
     const mats = [];
@@ -696,7 +860,10 @@ export class Renderer3D {
       if (seen.has(obj)) continue;
       this.views.delete(obj);
       // slain monsters collapse and sink instead of popping out of existence
-      if ((v.kind === 'enemy' || v.kind === 'boss') && v.actor && !obj.vanish && v.root.visible) {
+      if (v.proc && !obj.vanish && v.root.visible) {
+        this.corpses.push({ ...v, t: 0 }); // beasts keel over
+        if (this.corpses.length > 40) this.scene.remove(this.corpses.shift().root);
+      } else if ((v.kind === 'enemy' || v.kind === 'boss') && v.actor && !obj.vanish && v.root.visible) {
         v.actor.flash(0);
         v.actor.die(v.kind === 'boss' ? 'Death_B' : 'Death_A');
         this.corpses.push({ ...v, t: 0 });
@@ -705,7 +872,8 @@ export class Renderer3D {
     }
     this.corpses = this.corpses.filter((c) => {
       c.t += dt;
-      c.actor.update(dt);
+      if (c.proc) c.proc.rotation.z = Math.min(Math.PI / 2, c.t * 6) * (c.root.id % 2 ? 1 : -1);
+      else c.actor.update(dt);
       if (c.t > 1.3) c.root.position.y -= dt * 25;
       if (c.t > 2.4) { this.scene.remove(c.root); return false; }
       return true;
@@ -713,7 +881,7 @@ export class Renderer3D {
 
     const seenM = new Set();
     for (const pr of g.projs) {
-      if (pr.kind !== 'lob') continue;
+      if (!LOBBED.has(pr.kind)) continue;
       seenM.add(pr);
       let mk = this.markers.get(pr);
       if (!mk) { mk = buildMarker(); this.markers.set(pr, mk); this.scene.add(mk); }
@@ -724,6 +892,7 @@ export class Renderer3D {
 
     this.syncLights(g, t, tx, tz);
     this.syncParticles(g);
+    this.updateAmbient(dt, t);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -807,14 +976,27 @@ export class Renderer3D {
     v.root.visible = visible;
     if (!visible) return;
     const [p] = g.nearestPlayer(e);
-    if (p) v.root.rotation.y = lerpAngle(v.root.rotation.y, Math.atan2(p.x - e.x, p.y - e.y), 0.18);
+    // a charging beast faces where it's going, not the hero
+    const face = e.charging > 0 && v.proc ? Math.atan2(e.cvx || 0, e.cvy || 0) : p ? Math.atan2(p.x - e.x, p.y - e.y) : null;
+    if (face !== null) v.root.rotation.y = lerpAngle(v.root.rotation.y, face, 0.18);
     const moved = v.px !== undefined ? Math.hypot(e.x - v.px, e.y - v.py) : 0;
     v.px = e.x; v.py = e.y;
     const moving = moved > 0.15;
+    if (v.proc) {
+      v.proc.userData.anim(g.time + e.phase, moving, e);
+      const hurt = e.hurt > 0;
+      if (hurt || v.flashing) {
+        v.flashing = hurt;
+        for (const m of v.proc.userData.mats) {
+          if (hurt) { m.emissive.set('#ffffff'); m.emissiveIntensity = 0.8; } else { m.emissive.copy(m.userData.e0); m.emissiveIntensity = m.userData.ei0; }
+        }
+      }
+      return;
+    }
     a.base(moving ? st.walk : 'Idle', moving ? st.walkSpeed : 1);
     if (e.act && e.act !== v.lastAct) {
       v.lastAct = e.act;
-      const clip = e.act.type === 'throw' ? 'Throw' : e.act.type === 'cast' ? 'Spellcast_Shoot' : '1H_Melee_Attack_Chop';
+      const clip = e.act.type === 'throw' ? 'Throw' : e.act.type === 'cast' ? st.shoot || 'Spellcast_Shoot' : st.melee || '1H_Melee_Attack_Chop';
       a.play(clip, { upper: moving, timeScale: 2 });
     }
     if (e.hurt > 0 && !v.wasHurt && !a.busy) a.play('Hit_B', { upper: true, timeScale: 2.2 });
@@ -881,7 +1063,7 @@ export class Renderer3D {
   }
 
   updateProj(v, pr, t) {
-    if (pr.kind === 'lob') {
+    if (LOBBED.has(pr.kind)) {
       v.root.position.set(pr.x, 14 + pr.z, pr.y);
       v.spin.rotation.set(t * 8, t * 6, 0);
       return;

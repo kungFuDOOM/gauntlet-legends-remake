@@ -85,8 +85,24 @@ test('secret heroes unlock from guardians and Rune Stones', async () => {
 test('difficulty ramps with level and party size', async () => {
   const { difficulty } = await import('../src/config.js');
   const a = difficulty(1, 1), b = difficulty(16, 1), c = difficulty(1, 4);
-  assert.equal(a.hp, 1);
+  assert.ok(a.hp > 1 && a.hp < 1.2, 'the first stage is a little tougher than the base stats');
   assert.ok(b.hp > 2 && b.dmg > 1.5, 'late levels are much tougher');
-  assert.ok(c.hp > 1.8 && c.spawn > 1.5 && c.localCap > a.localCap, 'bigger parties face more monsters');
+  for (let n = 2; n <= 16; n++) assert.ok(difficulty(n, 1).hp > difficulty(n - 1, 1).hp, 'every stage is a step harder');
+  assert.ok(c.hp > 1.6 && c.spawn > 1.5 && c.localCap > a.localCap, 'bigger parties face more monsters');
   assert.ok(b.gold > a.gold, 'later realms pay more');
+});
+
+test('monsters make up part of a party\'s level lead, never all of it', async () => {
+  const { difficulty, expectedLevel, CLASSES } = await import('../src/config.js');
+  for (const n of [1, 5, 9, 14]) {
+    const usual = expectedLevel(n);
+    const even = difficulty(n, 1, usual), ahead = difficulty(n, 1, usual + 8), behind = difficulty(n, 1, Math.max(1, usual - 3));
+    assert.ok(ahead.hp > even.hp && ahead.dmg > even.dmg, 'a leveled-up party meets tougher monsters');
+    assert.ok(behind.hp <= even.hp, 'a party behind gets some relief');
+    // a warrior 8 levels ahead hits much harder than the monsters' extra health
+    const hits = (CLASSES.warrior.strength + 3 * (usual + 7)) / (CLASSES.warrior.strength + 3 * (usual - 1));
+    assert.ok(hits > 1.1 * (ahead.hp / even.hp), 'leveling up still makes the stage clearly easier');
+    assert.equal(difficulty(n, 1, usual + 100).hp, difficulty(n, 1, usual + 15).hp, 'the catch-up is capped');
+  }
+  assert.ok(expectedLevel(16) > expectedLevel(9) && expectedLevel(9) > expectedLevel(2) && expectedLevel(1) === 1);
 });

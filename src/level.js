@@ -36,6 +36,85 @@ export const THEMES = [
   },
 ];
 
+// Each stage's own look, layered over its realm's theme: colours and light, the hazard's
+// colour (lava, poison sludge, soul fire), drifting particles (see render3d), props, and how
+// much lava the canyon layouts cut through it.
+//   particles: embers | snow | ash | motes | spores | wisps | souls | sparks | drips
+//   features: procedural dressing scattered near walls (crystals, mushrooms, braziers, webs, chains)
+export const STAGE_LOOKS = {
+  1: { // Valley of Fire: a sun-baked canyon crossed by lava
+    sky: '#3a1608', fog: '#4a2010', light: '#ffb070', ambient: 0.8, rock: '#9a6a44', floorTint: '#f0d0b0',
+    particles: { type: 'embers', color: '#ff8a30', count: 90 }, lava: { rivers: 1, pools: 0.32 }, lantern: '#ff9a40',
+    features: [{ kind: 'crystal', color: '#ff7a30', rate: 0.05 }],
+  },
+  2: { // Dagger Peak: snow on the heights, cold blue light, ice crystals
+    sky: '#4a5a78', fog: '#8a9ab8', light: '#e0eaff', ambient: 0.95, rock: '#8e94a4', floorTint: '#dfe6f2', cap: '#eef4ff',
+    particles: { type: 'snow', color: '#ffffff', count: 160 }, lava: { rivers: -1, pools: 0 }, lantern: '#a0c8ff',
+    features: [{ kind: 'crystal', color: '#80d0ff', rate: 0.09 }],
+    deco: { corner: ['tree_dead_small', 'rubble', 'tree_dead_medium'], scatter: ['rubble', 'bones_a', 'skull'] },
+  },
+  3: { // Cliffs of Desolation: purple dusk, drifting ash, bones everywhere
+    sky: '#1a0e24', fog: '#2e1a34', light: '#d8a8ff', ambient: 0.7, rock: '#6a5868', floorTint: '#c8b0c0',
+    particles: { type: 'ash', color: '#b8a8b8', count: 120 }, lava: { rivers: 0, pools: 0.15 }, lantern: '#c890ff',
+    deco: { corner: ['tree_dead_medium', 'ribcage', 'tree_dead_small'], scatter: ['bones_a', 'bones_b', 'skull', 'ribcage', 'skull'] },
+    features: [{ kind: 'crystal', color: '#b070ff', rate: 0.04 }],
+  },
+  5: { // Castle Courtyard: daylight, banners and golden motes
+    light: '#fff2d8', ambient: 0.85, fog: '#3a4258', sky: '#202838',
+    particles: { type: 'motes', color: '#ffe8a0', count: 70 }, lantern: '#ffc070', banners: 0.16,
+  },
+  6: { // Dungeon of Torment: dark cells, green torchlight, chains and webs
+    light: '#c8f0d0', ambient: 0.45, fog: '#08100a', sky: '#040806', wallTint: '#8a9a90', wallSide: '#3e4a44', wallTop: '#68786e', floorTint: '#a8b8a8',
+    particles: { type: 'drips', color: '#80ff90', count: 70 }, lantern: '#50ff70', banners: 0,
+    deco: { corner: ['coffin', 'bones_a', 'skull_candle'], scatter: ['bones_a', 'bones_b', 'skull', 'ribcage'] },
+    features: [{ kind: 'chains', rate: 0.07 }, { kind: 'web', rate: 0.06 }],
+  },
+  7: { // Tower Armory: braziers, weapon racks and red banners
+    light: '#ffd8a0', ambient: 0.7, fog: '#1a1010', sky: '#120a08', wallTint: '#e0c4a8', wallSide: '#5a4a44', wallTop: '#9a8070', floorTint: '#e8d0c0',
+    particles: { type: 'sparks', color: '#ffb040', count: 60 }, lantern: '#ff9040', banners: 0.3, bannerColor: 'red',
+    deco: { corner: ['sword_shield', 'barrel_stack', 'crates'], scatter: ['sword_shield', 'keg'] },
+    features: [{ kind: 'brazier', rate: 0.05 }],
+  },
+  9: { // Poisonous Fields: sickly green skies, toxic spores, giant mushrooms
+    sky: '#7aa060', fog: '#9ac088', light: '#eaffc8', ambient: 0.9, rock: '#7a8a6a', floorTint: '#c8dcb0',
+    particles: { type: 'spores', color: '#b0ff50', count: 130 }, lantern: '#a0ff60',
+    deco: { corner: ['tree_dead_small', 'pumpkin', 'fence'], scatter: ['bones_a', 'skull', 'pumpkin'] },
+    features: [{ kind: 'mushroom', color: '#a0e040', rate: 0.12 }],
+  },
+  10: { // Haunted Cemetery: moonlit night, ghost wisps among the graves
+    sky: '#141428', fog: '#262844', light: '#a8b8ff', ambient: 0.6, rock: '#6a7084', floorTint: '#a0a8c0',
+    particles: { type: 'wisps', color: '#a0c0ff', count: 60 }, lantern: '#90b0ff',
+    deco: { corner: ['gravestone', 'grave', 'tree_dead_medium', 'fence'], scatter: ['candles', 'skull', 'gravestone'] },
+  },
+  11: { // Venomous Spire: violet sky, poison crystals
+    sky: '#4a2a6a', fog: '#6a4a8a', light: '#f0d0ff', ambient: 0.85, rock: '#8a7a9a', floorTint: '#d0b8e0',
+    particles: { type: 'spores', color: '#e080ff', count: 110 }, lantern: '#e080ff',
+    deco: { corner: ['column', 'candles', 'grave'], scatter: ['skull', 'candles'] },
+    features: [{ kind: 'crystal', color: '#d050ff', rate: 0.1 }, { kind: 'mushroom', color: '#c060ff', rate: 0.04 }],
+  },
+  13: { // Gates of the Underworld: black iron, brimstone and falling ash
+    sky: '#0e0404', fog: '#260806', light: '#ff9a80', ambient: 0.55, rock: '#4a2e2a',
+    particles: { type: 'ash', color: '#ff7040', count: 110 }, lava: { rivers: 0, pools: 0.4 },
+    features: [{ kind: 'brazier', rate: 0.04 }, { kind: 'chains', rate: 0.03 }],
+  },
+  14: { // Lava Pits: rivers of fire and showers of embers
+    sky: '#2a0802', fog: '#4a1206', light: '#ffa060', ambient: 0.7, rock: '#5a3020', floorTint: '#e0a888',
+    particles: { type: 'embers', color: '#ffa030', count: 170 }, lava: { rivers: 1, pools: 0.65 },
+  },
+  15: { // Hall of Souls: violet gloom, pools of soul fire, rising spirits
+    sky: '#0a0614', fog: '#160c24', light: '#b8a8ff', ambient: 0.55, rock: '#3a2e4a', floorTint: '#b0a0c8',
+    particles: { type: 'souls', color: '#80b0ff', count: 90 }, hazard: 'souls', lantern: '#7090ff', lava: { rivers: 0, pools: 0.45 },
+    features: [{ kind: 'crystal', color: '#6080ff', rate: 0.06 }],
+  },
+};
+// the guardians' lairs and anything else fall back to a look per realm
+const REALM_LOOKS = [
+  { particles: { type: 'embers', color: '#ff8a30', count: 80 } },
+  { particles: { type: 'motes', color: '#c8d0ff', count: 50 } },
+  { particles: { type: 'spores', color: '#c0ff70', count: 80 } },
+  { particles: { type: 'embers', color: '#ff5020', count: 140 } },
+];
+
 export const BOSSES = [
   { name: 'The Dragon',       model: 'dragon',  color: '#b8321e', horn: '#e8d8b0', hp: 520,  speed: 70 },
   { name: 'The Chimera',      model: 'chimera', color: '#9a7a3a', horn: '#3a2a1a', hp: 700,  speed: 82 },
@@ -47,7 +126,7 @@ export const LEVELS_PER_REALM = 4;
 
 export function levelInfo(n) {
   const realm = Math.floor((n - 1) / LEVELS_PER_REALM);
-  const theme = THEMES[realm % THEMES.length];
+  const theme = { ...THEMES[realm % THEMES.length], ...(STAGE_LOOKS[n] || REALM_LOOKS[realm % 4]) };
   return {
     realm,
     theme,
@@ -102,12 +181,27 @@ export function bfs(tiles, w, h, sources, passable, parents = null) {
 export const walkable = (t) => t === T.FLOOR || t === T.EXIT || t === T.BRIDGE || t === T.SPIKES;
 export const walkableOrDoor = (t) => walkable(t) || t === T.DOOR;
 
-function enemyWeights(n) {
-  const w = [['grunt', 5], ['ghost', 3]];
-  if (n >= 2) w.push(['lobber', 2]);
-  if (n >= 3) w.push(['demon', 2]);
-  if (n >= 5) w.push(['sorcerer', 2]);
-  return w;
+// Which monsters live where: each realm has its own, and each stage of a realm adds tougher
+// ones (index: realm, then stage 1-3; weights are how common each is).
+export const ROSTERS = [
+  [[['goblin', 6], ['bat', 3], ['bomber', 1]],
+   [['goblin', 5], ['bat', 3], ['bomber', 2], ['orc', 1]],
+   [['goblin', 4], ['bat', 2], ['bomber', 2], ['orc', 2], ['shaman', 2]]],
+  [[['grunt', 5], ['ghost', 3], ['archer', 2]],
+   [['grunt', 4], ['ghost', 3], ['archer', 2], ['lobber', 1], ['knight', 1]],
+   [['grunt', 3], ['ghost', 2], ['archer', 3], ['knight', 2], ['sorcerer', 2]]],
+  [[['zombie', 5], ['wraith', 2], ['plaguer', 2], ['spider', 1]],
+   [['zombie', 4], ['wraith', 4], ['spider', 2], ['witch', 1]],
+   [['zombie', 3], ['wraith', 2], ['spider', 3], ['plaguer', 2], ['witch', 2]]],
+  [[['imp', 6], ['skull', 3], ['demon', 2]],
+   [['imp', 4], ['skull', 3], ['hound', 2], ['demon', 2]],
+   [['imp', 3], ['skull', 2], ['hound', 3], ['demon', 2], ['warlock', 3]]],
+];
+
+export function enemyWeights(n) {
+  const realm = Math.min(3, Math.floor((n - 1) / LEVELS_PER_REALM));
+  const stage = Math.min(2, (n - 1) % LEVELS_PER_REALM); // a guardian's lair uses the last stage's
+  return ROSTERS[realm][stage];
 }
 
 function pickWeighted(R, list) {
@@ -303,7 +397,8 @@ function caveLayout(n, R, inferno) {
   disc(tiles, w, h, start.x, start.y, 2.5, T.FLOOR);
 
   // lava rivers cut across the canyon; pools sit in some clearings
-  const rivers = inferno ? 2 + Math.floor(R() * 2) : 1 + (n >= 3 ? 1 : 0);
+  const look = STAGE_LOOKS[n] && STAGE_LOOKS[n].lava;
+  const rivers = Math.max(0, (inferno ? 2 + Math.floor(R() * 2) : 1 + (n >= 3 ? 1 : 0)) + (look ? look.rivers : 0));
   for (let k = 0; k < rivers; k++) {
     let x = w * (0.25 + 0.6 * ((k + R() * 0.6) / rivers));
     const width = inferno ? 2.2 : 1.6;
@@ -313,7 +408,7 @@ function caveLayout(n, R, inferno) {
     }
   }
   areas.slice(2).forEach((a) => {
-    if (R() < (inferno ? 0.45 : 0.2)) disc(tiles, w, h, a.cx + (R() - 0.5) * 2, a.cy + (R() - 0.5) * 2, 1.5 + R(), T.LAVA, [T.FLOOR], R);
+    if (R() < (look ? look.pools : inferno ? 0.45 : 0.2)) disc(tiles, w, h, a.cx + (R() - 0.5) * 2, a.cy + (R() - 0.5) * 2, 1.5 + R(), T.LAVA, [T.FLOOR], R);
   });
   disc(tiles, w, h, start.x, start.y, 3, T.FLOOR, [T.LAVA]);
   bridgeGaps(tiles, w, h, start, T.LAVA);
@@ -742,19 +837,20 @@ function populate(n, R, info, map) {
 
   const weights = enemyWeights(n);
   const generators = [];
-  const genCount = Math.min(3 + Math.floor(n * 1.3), 18);
+  const genCount = Math.min(4 + Math.floor(n * 1.3), 19);
   for (let k = 0; k < genCount && others.length; k++) {
     const c = randomAreaCell();
     if (c != null) generators.push({ type: pickWeighted(R, weights), x: c % w, y: (c / w) | 0 });
   }
   const enemies = [];
+  const perArea = 2 + (n >= 6 ? 1 : 0) + (n >= 11 ? 1 : 0); // later stages start more crowded
   for (const i of others) {
-    for (let k = 0; k < 2; k++) {
+    for (let k = 0; k < perArea; k++) {
       const c = freeCellIn(areas[i].cells);
       if (c != null) enemies.push({ type: pickWeighted(R, weights), x: c % w, y: (c / w) | 0 });
     }
   }
-  if (n >= 5 && R() < 0.6) {
+  if (n >= 5 && R() < (n >= 9 ? 0.85 : 0.6)) {
     const c = freeCellIn(areas[exitArea].cells);
     if (c != null) enemies.push({ type: 'death', x: c % w, y: (c / w) | 0 });
   }
@@ -894,8 +990,10 @@ function generateBossLevel(n, seed, info) {
     { type: 'gold', x: 18, y: 10 }, { type: 'gold', x: 18, y: 21 }, { type: 'gem', x: 35, y: 15 },
   ];
   if (R() < 0.7) items.push({ type: 'amulet', x: 6, y: 16, sub: POWERUP_ORDER[Math.floor(R() * POWERUP_ORDER.length)] });
-  const generators = [{ type: 'grunt', x: 19, y: 9 }, { type: 'grunt', x: 19, y: 22 }];
-  if (info.realm >= 1) generators.push({ type: 'ghost', x: 35, y: 21 }, { type: 'ghost', x: 35, y: 10 });
+  // the realm's foot soldiers and its flyers
+  const [melee, flyer] = ROSTERS[Math.min(3, info.realm)][0].map(([k]) => k);
+  const generators = [{ type: melee, x: 19, y: 9 }, { type: melee, x: 19, y: 22 }];
+  if (info.realm >= 1) generators.push({ type: flyer, x: 35, y: 21 }, { type: flyer, x: 35, y: 10 });
   for (const it of [...items, ...generators]) tiles[it.y * w + it.x] = T.FLOOR;
   const rooms = [{ cx: 6, cy: 15, size: 50 }, { cx: 27, cy: 15, size: 480 }];
   return { n, w, h, tiles, ground, rooms, start: { x: 6, y: 15 }, exit, items, generators, enemies: [], boss: { x: 30, y: 15 }, info, doorSegs: 0 };

@@ -2,15 +2,25 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, LOBBED, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
-import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable } from './level.js';
+import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable, enemyWeights } from './level.js';
 import { sfx, say } from './audio.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const SPREAD_X = VIEW_W - 110;
 const SPREAD_Y = VIEW_H - 110;
+
+// The monsters a stage introduces, for its title banner (" · Beware: Goblin, Cave Bat").
+function newFoes(L) {
+  const n = L.n;
+  if (!n || L.info.isBoss) return '';
+  const here = enemyWeights(n).map(([k]) => k);
+  const before = (n - 1) % 4 ? enemyWeights(n - 1).map(([k]) => k) : [];
+  const fresh = here.filter((k) => !before.includes(k)).map((k) => ENEMIES[k].name);
+  return fresh.length ? ` · Beware: ${fresh.join(', ')}` : '';
+}
 
 export class Game {
   constructor() {
@@ -143,7 +153,7 @@ export class Game {
     this.flowT = 0; this.exploreT = 0; this.time = 0;
     this.crackHp = new Map(); this.runesFound = [];
     this.refreshDifficulty();
-    this.banner = { text: L.info.stageName, sub: L.info.theme.name, t: 3.5 };
+    this.banner = { text: L.info.stageName, sub: L.info.theme.name + newFoes(L), t: 3.5 };
   }
 
   loadLevel(L, key = 'L0') {
@@ -183,8 +193,11 @@ export class Game {
     return { x, y };
   }
 
+  // Monster toughness for this stage, this party's size and its heroes' average level.
   refreshDifficulty() {
-    this.diff = difficulty(this.levelNum, Math.max(1, this.allPlayers().length));
+    const ps = this.allPlayers();
+    const lvl = ps.length ? ps.reduce((s, p) => s + p.lvl, 0) / ps.length : null;
+    this.diff = difficulty(this.levelNum, Math.max(1, ps.length), lvl);
   }
 
   spawnEnemy(type, x, y) {
@@ -202,7 +215,8 @@ export class Game {
 
   spawnBoss(x, y) {
     const b = this.info.boss;
-    const hp = Math.round(b.hp * (1 + 0.35 * (this.livePlayers().length - 1)));
+    if (!this.diff) this.refreshDifficulty();
+    const hp = Math.round(b.hp * (1 + 0.35 * (this.livePlayers().length - 1)) * this.diff.lead);
     const e = {
       kind: 'enemy', type: 'boss', def: { ...b, ai: 'boss', dmg: 25, r: 30, xp: 400, score: 5000 },
       x, y, r: 30, hp, maxHp: hp, speed: b.speed, dmgMul: this.diff ? this.diff.dmg : 1, cd: 2, cd2: 6, cd3: 3, hurt: 0, phase: 0, walk: 0,
@@ -272,7 +286,7 @@ export class Game {
 
   move(e, dx, dy) {
     let blocked = false;
-    const avoid = e.kind === 'enemy' && e.type !== 'ghost';
+    const avoid = e.kind === 'enemy' && !(e.def && e.def.fly); // flyers drift over lava and spikes
     const float = e.kind === 'player' && !!e.buffs.levitate;
     if (dx) { if (!this.collides(e.x + dx, e.y, e.r, avoid, float)) e.x += dx; else blocked = true; }
     if (dy) { if (!this.collides(e.x, e.y + dy, e.r, avoid, float)) e.y += dy; else blocked = true; }
@@ -539,6 +553,7 @@ export class Game {
       p.strength += 3; p.shotDmg += 1.2; p.armor = Math.min(0.6, p.armor + 0.015);
       p.speed += 2; p.magic += 0.1; p.hp += 120;
       sfx.levelup();
+      this.refreshDifficulty(); // monsters from here on match the party's new level
       this.text(p.x, p.y - 30, `LEVEL ${p.lvl}!`, '#ffe070', 2);
       this.burst(p.x, p.y, '#ffe070', 20, 150);
     }
@@ -720,7 +735,7 @@ export class Game {
     e.hurt = 0.12;
     if (p) p.turbo = Math.min(100, p.turbo + amount * 0.45);
     sfx.hit();
-    this.burst(e.x, e.y, e.type === 'ghost' ? '#e0e8ff' : '#b02020', 4, 80);
+    this.burst(e.x, e.y, e.def.fly ? e.def.color : '#b02020', 4, 80);
     if (e.type === 'boss') this.shake = Math.max(this.shake, 2);
     else if (melee && p) {
       // melee hits shove the target back and jolt the camera a little
@@ -848,11 +863,36 @@ export class Game {
     switch (def.ai) {
       case 'melee':
         if (!contact) this.steer(e, p, d, dt);
-        else if (e.cd <= 0) { e.cd = 0.7; e.act = { type: 'melee', t: this.time }; this.hurtPlayer(p, def.dmg, e); }
+        else if (e.cd <= 0) {
+          e.cd = def.atkCd || 0.7;
+          e.act = { type: 'melee', t: this.time };
+          this.hurtPlayer(p, def.dmg, e);
+          if (def.knock && d > 0) { this.move(p, ((p.x - e.x) / d) * def.knock, ((p.y - e.y) / d) * def.knock); this.shake = Math.max(this.shake, 3); }
+        }
         break;
       case 'kamikaze':
-        if (!contact) this.steer(e, p, d, dt);
-        else { this.hurtPlayer(p, def.dmg, e); e.hp = 0; e.vanish = true; this.burst(e.x, e.y, '#e0e8ff', 12, 120); }
+        if (!contact) {
+          this.steer(e, p, d, dt);
+          // bats and skulls weave as they come
+          if (def.zig && d > 30) { const s = Math.sin(e.phase * 7) * e.speed * 0.7 * def.zig * dt; this.move(e, (-(p.y - e.y) / d) * s, ((p.x - e.x) / d) * s); }
+        } else { this.hurtPlayer(p, def.dmg, e); e.hp = 0; e.vanish = true; this.burst(e.x, e.y, def.color, 12, 120); }
+        break;
+      case 'charger':
+        // crouch for a moment, then lunge in a straight line
+        if (e.charging > 0) {
+          e.charging -= dt;
+          const blocked = this.move(e, e.cvx * dt, e.cvy * dt);
+          if (!e.bit && dist(p, e) < e.r + p.r + 4) { e.bit = true; this.hurtPlayer(p, def.dmg * 1.3, e); }
+          if (blocked || e.charging <= 0) { e.charging = 0; e.cd = 1.4; }
+        } else if (e.cd2 > 0) {
+          e.cd2 -= dt;
+          if (e.cd2 <= 0) { const a = Math.atan2(p.y - e.y, p.x - e.x); e.charging = 0.42; e.cvx = Math.cos(a) * e.speed * 3.4; e.cvy = Math.sin(a) * e.speed * 3.4; e.bit = false; }
+        } else if (d < 190 && d > 50 && e.cd <= 0 && this.lineOfSight(e, p)) {
+          e.cd2 = 0.45;
+          e.act = { type: 'windup', t: this.time };
+        } else if (contact) {
+          if (e.cd <= 0) { e.cd = 0.8; e.act = { type: 'melee', t: this.time }; this.hurtPlayer(p, def.dmg, e); }
+        } else this.steer(e, p, d, dt);
         break;
       case 'death':
         if (!contact) this.steer(e, p, d, dt);
@@ -877,7 +917,7 @@ export class Game {
         if (d < def.range + 40 && e.cd <= 0) {
           e.cd = def.cooldown * rand(0.8, 1.2);
           e.act = { type: 'throw', t: this.time };
-          this.projs.push({ owner: 'enemy', kind: 'lob', x: e.x, y: e.y, sx: e.x, sy: e.y, tx: p.x + rand(-20, 20), ty: p.y + rand(-20, 20), t: 0, T: 1.0, dmg: def.dmg * (e.dmgMul || 1), r: 6, z: 0 });
+          this.projs.push({ owner: 'enemy', kind: def.lob || 'lob', x: e.x, y: e.y, sx: e.x, sy: e.y, tx: p.x + rand(-20, 20), ty: p.y + rand(-20, 20), t: 0, T: 1.0, dmg: def.dmg * (e.dmgMul || 1), r: 6, z: 0 });
         }
         break;
       case 'shooter':
@@ -893,7 +933,7 @@ export class Game {
           if (los && e.cd <= 0 && !e.invisible) {
             e.cd = def.cooldown * rand(0.8, 1.2);
             e.act = { type: 'cast', t: this.time };
-            this.enemyShot(e, Math.atan2(p.y - e.y, p.x - e.x), def.ai === 'sorcerer' ? 'bolt' : 'efire', def.dmg, 230);
+            this.enemyShot(e, Math.atan2(p.y - e.y, p.x - e.x), def.shot || (def.ai === 'sorcerer' ? 'bolt' : 'efire'), def.dmg, def.shotSpeed || 230);
           }
           if (!los || d > 140) this.steer(e, p, d, dt);
         }
@@ -938,11 +978,11 @@ export class Game {
         e.charging = 0.8; e.cvx = Math.cos(a) * 380; e.cvy = Math.sin(a) * 380;
         this.text(e.x, e.y - 40, 'CHARGE!', '#ff8060', 1);
       } else {
-        const kinds = ['grunt', 'ghost', 'demon', 'sorcerer'];
+        const kinds = enemyWeights(this.levelNum).map(([k]) => k); // the realm's own monsters
         for (let i = 0; i < 3; i++) {
           const a = Math.random() * Math.PI * 2;
           const x = e.x + Math.cos(a) * 50, y = e.y + Math.sin(a) * 50;
-          const kind = kinds[Math.floor(Math.random() * (Math.min(this.info.realm, 3) + 1))];
+          const kind = kinds[Math.floor(Math.random() * kinds.length)];
           if (!this.collides(x, y, 12)) this.spawnEnemy(kind, x, y).fromGen = true;
         }
         this.burst(e.x, e.y, '#a080ff', 20, 160);
@@ -980,7 +1020,7 @@ export class Game {
   // ---------- projectiles ----------
 
   updateProjectile(pr, dt) {
-    if (pr.kind === 'lob') {
+    if (LOBBED.has(pr.kind)) {
       pr.t += dt;
       const k = Math.min(1, pr.t / pr.T);
       pr.x = pr.sx + (pr.tx - pr.sx) * k;
@@ -988,8 +1028,11 @@ export class Game {
       pr.z = Math.sin(k * Math.PI) * 60;
       if (k >= 1) {
         pr.dead = true;
-        this.burst(pr.x, pr.y, '#8a7a5a', 10, 100);
-        for (const p of this.livePlayers()) if (dist(p, pr) < 28) this.hurtPlayer(p, pr.dmg, null);
+        // bombs blow up wider, flasks splash poison
+        const big = pr.kind === 'bomb';
+        if (big) { this.burst(pr.x, pr.y, '#ffb040', 22, 170); this.burst(pr.x, pr.y, '#5a4a3a', 10, 90); sfx.explode(); }
+        else this.burst(pr.x, pr.y, pr.kind === 'flask' ? '#90ff40' : '#8a7a5a', pr.kind === 'flask' ? 18 : 10, 100);
+        for (const p of this.livePlayers()) if (dist(p, pr) < (big ? 40 : 28)) this.hurtPlayer(p, pr.dmg, null);
       }
       return;
     }

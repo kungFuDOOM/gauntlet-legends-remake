@@ -4,7 +4,7 @@ A fan-made remake of the 1998 arcade classic **Gauntlet Legends** that runs in t
 
 It is plain JavaScript with no build step. The libraries are [three.js](https://threejs.org) and, for online play, [PeerJS](https://peerjs.com), both included in `vendor/` (MIT licensed).
 
-The **heroes** are original models built in code (`src/heroes.js`) in the style of the arcade era: adult proportions, smooth low-poly limbs and bold costumes, attached to an animated rig. The **monsters and dungeon** are animated 3D models from Kay Lousberg's free **CC0** KayKit packs (see [`assets/CREDITS.md`](assets/CREDITS.md)). A few things the packs don't cover (three of the bosses, magic pickups, effects) are built in code. Sounds are synthesized. None of the original game's art, models, audio or levels are used.
+The **heroes** are original models built in code (`src/heroes.js`) in the style of the arcade era: adult proportions, smooth low-poly limbs and bold costumes, attached to an animated rig. Most **monsters** are built the same way (`src/monsters.js`); the Castle's skeletons and the **dungeon** are animated 3D models from Kay Lousberg's free **CC0** KayKit packs (see [`assets/CREDITS.md`](assets/CREDITS.md)). A few things the packs don't cover (beasts like the spiders and hellhounds, three of the bosses, magic pickups, effects) are built in code. Sounds are synthesized. None of the original game's art, models, audio or levels are used.
 
 > Fan project. Not affiliated with or endorsed by the owners of the Gauntlet trademark.
 
@@ -77,6 +77,12 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **The hub (as in Dark Legacy):** a walkable plaza with a portal to each realm. Step into a portal and pick a stage. Stages in a realm open one after another, ending with its **guardian** (the Dragon, the Chimera, the Plague Fiend). The **Underworld** portal stays sealed until all three guardians are defeated; Skorne waits at its end. You return to the hub after every level.
 - **Rune Stones:** each guardian carries one, and every level hides another in a **secret room behind a cracked wall**. Smash the wall to get in. There are 16 in all.
 - **Gold and the merchant:** treasure gives gold. Walk up to the merchant in the hub to buy food, magic potions, keys and permanent **Strength / Armor / Speed / Magic** upgrades. Each player shops with their own gold.
+- **Every realm has its own monsters, and every stage its own look:**
+  - **Mountain Kingdom:** goblins, cave bats, goblin bombers (bombs blow up wide), orc brutes (slow, tough, and they shove you back) and goblin shamans. The Valley of Fire glows with embers and lava, Dagger Peak is snowed over with ice crystals, and the Cliffs of Desolation sit in purple dusk under drifting ash.
+  - **Castle Stronghold:** the undead garrison: skeletons, ghosts, skeleton archers, bone throwers, dark knights and necromancers. A sunlit courtyard with banners, a green-lit dungeon hung with chains and cobwebs, and an armory of braziers and weapon racks.
+  - **Sky Dominion:** zombies, wraiths, giant spiders (they crouch, then lunge), plague doctors throwing poison flasks, and witches. Fields of toxic spores and giant mushrooms, a moonlit cemetery full of ghost wisps, and a violet spire of poison crystals.
+  - **Underworld:** imps, flaming skulls, hellhounds (they lunge too), demons hurling fire and warlocks, plus Death. Brimstone gates under falling ash, the Lava Pits, and the Hall of Souls with its pools of blue soul fire.
+  Each stage's title card names the new monsters it brings, and each realm's generators look the part (goblin camps, graves, spider nests, a witch's cauldron, demon shrines).
 - **Treasure rooms:** beat a guardian and the party gets 25 seconds in a vault heaped with gold, gems and chests.
 - **Secret heroes:** four more heroes join as the quest goes on: the **Minotaur** (defeat the Dragon), the **Falconess** (defeat the Chimera), the **Jackal** (defeat the Plague Fiend) and the **Tigress** (recover 12 Rune Stones).
 - **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
@@ -110,7 +116,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
 - **Music** composed on the fly for the title, each realm, boss fights, the shop, treasure rooms and the victory screen.
-- **Difficulty that scales** with the level and the size of the party: monsters get tougher and generators busier further into the quest and with more players, while treasure is worth more in later realms.
+- **Difficulty that scales** with the stage, the size of the party and the heroes' level: every stage is a step harder than the last (tougher monsters, busier generators, more of them waiting), and bigger parties face more. Each stage expects heroes of about a certain level; a party that's ahead (from replaying stages, say) meets monsters that make up 40% of its lead, so leveling up still makes a stage easier, just not a walkover. Guardians scale the same way. Treasure is worth more in later realms.
 - **Arcade announcer** with pre-recorded neural-voice lines ("Warrior needs food, badly!"), made with the open Kokoro voice model; `V` turns it off. Also: a shared camera that keeps the party together, a minimap of explored areas, stats and a leaderboard, and drop-in "continue" after dying.
 
 ## Project layout
@@ -127,6 +133,7 @@ src/render3d.js   three.js renderer: builds level geometry from the tile map, li
                   camera, and keeps a 3D model in sync with every entity
 src/assets.js     loads the KayKit models; Actor = animated character with separate upper/lower-body actions
 src/models.js     procedural models for the Dragon, Chimera and Plague Fiend, magic pickups, effects
+src/monsters.js   each realm's monsters: built on the hero rig (merged into a few skinned meshes) or procedural beasts
 src/hud.js        2D overlay: corner player panels, floating text, banners, menus
 src/stats.js      lifetime stats and the leaderboard (kept in the browser)
 vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder, PeerJS (all MIT)

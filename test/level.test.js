@@ -137,3 +137,19 @@ test('castle gates all guard something: none can be walked around, and there are
     assert.equal(L.items.filter((it) => it.type === 'key').length, gates + 1);
   }
 });
+
+test('each realm has its own monsters, and later stages add tougher ones', async () => {
+  const { ROSTERS, enemyWeights } = await import('../src/level.js');
+  const { ENEMIES } = await import('../src/config.js');
+  const realmSets = ROSTERS.map((stages) => new Set(stages.flat().map(([k]) => k)));
+  for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) {
+    assert.ok(![...realmSets[a]].some((k) => realmSets[b].has(k)), `realms ${a} and ${b} share no monsters`);
+  }
+  for (const set of realmSets) for (const k of set) assert.ok(ENEMIES[k], `${k} is a known monster`);
+  for (let n = 1; n <= 16; n++) {
+    const allowed = new Set([...enemyWeights(n).map(([k]) => k), 'death']);
+    const L = generateLevel(n);
+    for (const e of [...L.enemies, ...L.generators]) assert.ok(allowed.has(e.type), `level ${n}: ${e.type} belongs to its realm`);
+    if (n % 4 !== 1 && n % 4 !== 0) { const before = enemyWeights(n - 1).map(([k]) => k); assert.ok(enemyWeights(n).some(([k]) => !before.includes(k)), `stage ${n} brings a new monster`); }
+  }
+});

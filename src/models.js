@@ -142,18 +142,24 @@ export function grassTexture() {
   return grassTex;
 }
 
-let lavaTex = null;
-export function lavaTexture() {
-  if (lavaTex) return lavaTex;
-  lavaTex = canvasTex(128, (ctx, s) => {
-    ctx.fillStyle = '#c02808';
+// Molten lava, or (palette 'souls') pools of pale blue soul fire.
+const LAVA_PALETTES = {
+  lava: ['#c02808', 'rgba(255,220,80,0.9)', 'rgba(90,20,6,0.8)'],
+  souls: ['#24168a', 'rgba(150,210,255,0.9)', 'rgba(16,8,50,0.8)'],
+};
+const lavaTex = {};
+export function lavaTexture(kind = 'lava') {
+  if (lavaTex[kind]) return lavaTex[kind];
+  const [base, bright, dark] = LAVA_PALETTES[kind] || LAVA_PALETTES.lava;
+  lavaTex[kind] = canvasTex(128, (ctx, s) => {
+    ctx.fillStyle = base;
     ctx.fillRect(0, 0, s, s);
     // bright molten veins between darker cooling crust
     for (let i = 0; i < 26; i++) {
       const x = Math.random() * s, y = Math.random() * s, r = 6 + Math.random() * 16;
       for (const [ox, oy] of [[0, 0], [s, 0], [-s, 0], [0, s], [0, -s]]) {
         const gr = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
-        gr.addColorStop(0, i % 3 ? 'rgba(255,220,80,0.9)' : 'rgba(90,20,6,0.8)');
+        gr.addColorStop(0, i % 3 ? bright : dark);
         gr.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = gr;
         ctx.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
@@ -161,7 +167,26 @@ export function lavaTexture() {
     }
     noise(ctx, s, 20);
   });
-  return lavaTex;
+  return lavaTex[kind];
+}
+
+// A cobweb for dungeon corners.
+let webTex = null;
+export function webTexture() {
+  if (webTex) return webTex;
+  webTex = canvasTex(128, (ctx, s) => {
+    ctx.clearRect(0, 0, s, s);
+    ctx.strokeStyle = 'rgba(235,235,240,0.85)';
+    ctx.lineWidth = 1.2;
+    const c = s / 2;
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; ctx.beginPath(); ctx.moveTo(c, c); ctx.lineTo(c + Math.cos(a) * c, c + Math.sin(a) * c); ctx.stroke(); }
+    for (let r = 8; r < c; r += 9) {
+      ctx.beginPath();
+      for (let i = 0; i <= 8; i++) { const a = (i / 8) * Math.PI * 2; const x = c + Math.cos(a) * r, y = c + Math.sin(a) * r; if (i) ctx.quadraticCurveTo(c + Math.cos(a - 0.4) * r * 0.9, c + Math.sin(a - 0.4) * r * 0.9, x, y); else ctx.moveTo(x, y); }
+      ctx.stroke();
+    }
+  }, false);
+  return webTex;
 }
 
 let glowTex = null;
@@ -446,6 +471,24 @@ export function buildProjectile(kind) {
       break;
     case 'lob':
       part(spin, G.dodec(4.5), m('#7a6a5a'), 0, 0, 0, true);
+      break;
+    case 'bomb': // a black iron bomb with a lit fuse
+      part(spin, G.ico(5), m('#24222a', { metalness: 0.6, roughness: 0.4 }), 0, 0, 0, true);
+      part(spin, G.cyl(0.6, 0.6, 4, 4), m('#c8a060'), 0, 6, 0, false);
+      glow = '#ffb040'; size = 22;
+      break;
+    case 'flask': // a bubbling green potion
+      part(spin, G.ico(4), m('#70ff40', { emissive: '#40c020', emissiveIntensity: 1.2, transparent: true, opacity: 0.85 }), 0, 0, 0, false);
+      part(spin, G.cyl(1.2, 1.2, 4, 5), m('#d8d0c0'), 0, 5, 0, false);
+      glow = '#60ff30'; size = 30;
+      break;
+    case 'gbolt':
+      part(spin, G.oct(4), m('#a0ff80', { emissive: '#40ff40', emissiveIntensity: 3 }), 0, 0, 0, false);
+      glow = '#40ff60'; size = 38;
+      break;
+    case 'hbolt':
+      part(spin, G.oct(4.5), m('#ff6080', { emissive: '#ff1040', emissiveIntensity: 3 }), 0, 0, 0, false);
+      glow = '#ff2050'; size = 42;
       break;
   }
   if (glow) root.add(glowSprite(glow, size, 0.85));

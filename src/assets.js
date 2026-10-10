@@ -7,13 +7,14 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildHero } from './heroes.js';
+import { buildMonster, BUILT_MONSTERS } from './monsters.js';
 
 export const MODEL_SCALE = 16; // KayKit metres -> game units (one tile = 32 units = 2 m)
 
 // Monster models; heroes are built in heroes.js on the rig taken from 'warrior.glb'.
 const CHARACTERS = ['skeleton_warrior', 'skeleton_minion', 'skeleton_rogue', 'skeleton_mage'];
 export const HERO_CLASSES = ['warrior', 'valkyrie', 'wizard', 'archer', 'dwarf', 'knight', 'jester', 'sorceress', 'minotaur', 'falconess', 'jackal', 'tigress', 'merchant'];
-const HERO_SCALE = 27; // adult heroes are ~1.75 m tall -> ~47 game units
+export const HERO_SCALE = 27; // adult heroes are ~1.75 m tall -> ~47 game units
 const PROPS = [
   'weapon_axe', 'weapon_blade', 'weapon_staff', 'weapon_crossbow',
   'torch', 'barrel', 'chest', 'chest_gold', 'key', 'coins', 'coins_big', 'food', 'food_b', 'potion', 'pillar', 'column',
@@ -55,6 +56,12 @@ function buildHeroes(scene) {
     const rig = SkeletonUtils.clone(scene);
     rig.userData.adult = buildHero(cls, rig);
     assets.chars[cls] = rig;
+  }
+  // the realms' humanoid monsters (monsters.js), built the same way
+  for (const type of BUILT_MONSTERS) {
+    const rig = SkeletonUtils.clone(scene);
+    rig.userData.adult = buildMonster(type, rig);
+    assets.chars[`m_${type}`] = rig;
   }
 }
 
@@ -192,10 +199,10 @@ export class Actor {
       if (!m) {
         m = o.material.clone();
         if (tint) m.color.multiply(new THREE.Color(tint));
-        if (ghost) {
+        if (ghost) { // a colour string picks the ghost's glow
           m.transparent = true; m.opacity = 0.55; m.depthWrite = false;
-          m.emissive = new THREE.Color('#6080ff'); m.emissiveIntensity = 0.6;
-          m.color.set('#d8e4ff');
+          m.emissive = new THREE.Color(typeof ghost === 'string' ? ghost : '#6080ff'); m.emissiveIntensity = 0.6;
+          m.color.set(m.emissive).lerp(new THREE.Color('#ffffff'), 0.8);
         }
         m.userData.e0 = m.emissive.clone();
         m.userData.ei0 = m.emissiveIntensity;

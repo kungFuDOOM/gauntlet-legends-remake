@@ -70,7 +70,7 @@ const list = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
 const color = (v) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v) ? v : '#ffffff');
 const LEVEL_KEY = /^(H|U|T[0-2]|L([1-9]|1[0-6]))$/;
 const ITEM_TYPES = new Set(['food', 'poison', 'gold', 'gem', 'chest', 'barrel', 'key', 'potion', 'amulet', 'rune']);
-const PROJ_KINDS = new Set(['axe', 'sword', 'arrow', 'fireball', 'efire', 'dagger', 'spark', 'bolt', 'lob']);
+const PROJ_KINDS = new Set(['axe', 'sword', 'arrow', 'fireball', 'efire', 'dagger', 'spark', 'bolt', 'lob', 'bomb', 'flask', 'gbolt', 'hbolt']);
 const ACT_TYPES = new Set(['melee', 'shoot', 'turbo', 'throw', 'cast']);
 const STATES = new Set(['title', 'confirm', 'story', 'select', 'realm', 'shop', 'ending', 'play', 'paused', 'levelclear', 'gameover']);
 const POS = 20000; // generous bound for positions in pixels
