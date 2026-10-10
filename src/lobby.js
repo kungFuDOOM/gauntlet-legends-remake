@@ -28,7 +28,7 @@ const CSS = `
 `;
 
 export class Lobby {
-  // handlers: onHost(), onJoin(code), onLeave(), onKick(id), onLock()
+  // handlers: onHost(), onJoin(code), onLeave(), onKick(id), onLock(), onNewCode()
   constructor(handlers) {
     this.h = handlers;
     const style = document.createElement('style');
@@ -104,7 +104,7 @@ export class Lobby {
   //   online: null | { role: 'host' | 'guest', code, players }
   update(state, online) {
     if (online && this.isOpen) this.close();
-    const showBar = !!online && state !== 'play';
+    const showBar = !!online && (state !== 'play' || online.menu);
     if (this.bar.style.display !== (showBar ? 'flex' : 'none')) this.bar.style.display = showBar ? 'flex' : 'none';
     if (online) {
       const before = online.role === 'host' ? 'ROOM ' : 'ONLINE · room ';
@@ -129,7 +129,11 @@ export class Lobby {
         lock.title = 'Stop new players from joining';
         if (online.locked) lock.className = 'on';
         lock.addEventListener('click', () => this.h.onLock());
-        this.tools.append(lock);
+        const fresh = document.createElement('button');
+        fresh.textContent = 'New code';
+        fresh.title = 'Get a new room code: players already here stay, the old code stops working';
+        fresh.addEventListener('click', () => this.h.onNewCode());
+        this.tools.append(lock, fresh);
         for (const g of guests) {
           const kick = document.createElement('button');
           kick.textContent = `Kick ${g.label}`;

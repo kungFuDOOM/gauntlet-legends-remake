@@ -345,6 +345,15 @@ const lobby = new Lobby({
   onJoin: joinOnline,
   onLeave: () => leaveOnline('You left the online game.'),
   onKick: (id) => { if (net && net.role === 'host') net.link.kick(id); },
+  onNewCode: () => {
+    if (!net || net.role !== 'host') return;
+    const link = net.link;
+    link.newCode().then((code) => {
+      if (!net || net.link !== link) return;
+      net.code = code;
+      toast = { text: `New room code: ${showCode(code)} (the old one no longer works)`, t: 4, local: true };
+    }).catch((err) => { toast = { text: err.message, t: 3, local: true }; });
+  },
   onLock: () => {
     if (!net || net.role !== 'host') return;
     net.link.locked = !net.link.locked;
@@ -490,6 +499,9 @@ function guestFrame(dt) {
   const menu = ['select', 'story', 'realm', 'shop', 'gameover', 'confirm', 'levelclear'].includes(state);
   if (input.key('Escape') || input.key('Backspace')) { if (menu) mg = true; else st = true; }
   if (input.key('KeyP')) st = true;
+  // pausing always shows this guest the Leave button for a while, even if the host
+  // doesn't pause, so a guest can never be stuck in someone's game
+  if (st) net.menuUntil = performance.now() + 5000;
   // tapping the arrows on your own hero card
   if (state === 'select') {
     for (const t of taps) {
@@ -523,15 +535,15 @@ function updateMagicHint(dt) {
   }
 }
 
-// Start pressed by anyone; an online guest can only pause or resume every couple of
-// seconds, so one can't keep flipping the game in and out of pause.
+// Start pressed by anyone; an online guest can only pause or resume once a second, so one
+// can't keep flipping the game in and out of pause.
 const netPauseAt = new Map();
 function startPressed() {
   for (const id of input.sources()) {
     if (!input.get(id).pressed.start) continue;
     if (!isNet(id)) return true;
     const now = performance.now();
-    if (now - (netPauseAt.get(id) || -1e9) < 2000) continue;
+    if (now - (netPauseAt.get(id) || -1e9) < 1000) continue;
     netPauseAt.set(id, now);
     return true;
   }
@@ -764,7 +776,7 @@ function frame(now) {
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
   lobby.update(state, net && (net.role === 'host'
     ? { role: 'host', code: net.code, players: net.link.count, guests: guestList(), locked: net.link.locked }
-    : { role: 'guest', code: net.code }));
+    : { role: 'guest', code: net.code, menu: performance.now() < (net.menuUntil || 0) }));
   if (net && net.role === 'guest') {
     guestFrame(dt);
     taps.length = 0;
