@@ -667,29 +667,66 @@ function straightBridge(tiles, w, h, a, b) {
 }
 
 // Carve a 3x3 room into solid rock (or open sky) beside an area, sealed by a cracked wall.
-function addSecret(tiles, w, h, areas, R) {
+function addSecret(tiles, w, h, areas, R, fallbackCells = []) {
   const solid = (i) => tiles[i] === T.WALL || tiles[i] === T.VOID;
-  for (let attempt = 0; attempt < 120 && areas.length; attempt++) {
-    const a = areas[Math.floor(R() * areas.length)];
-    const c = a.cells[Math.floor(R() * a.cells.length)];
-    if (tiles[c] !== T.FLOOR) continue;
+  // a 3x3 room in solid rock two tiles past floor cell c, reached through one cracked wall
+  const tryAt = (c, dx, dy) => {
+    if (tiles[c] !== T.FLOOR) return null;
     const x = c % w, y = (c / w) | 0;
-    const [dx, dy] = DIRS4[Math.floor(R() * 4)];
     const wx = x + dx, wy = y + dy;          // the cracked wall
     const rx = x + dx * 3, ry = y + dy * 3;  // room centre
-    if (rx < 4 || ry < 4 || rx > w - 5 || ry > h - 5) continue;
-    let ok = solid(wy * w + wx);
-    for (let oy = -2; oy <= 2 && ok; oy++)
-      for (let ox = -2; ox <= 2; ox++) if (!solid((ry + oy) * w + rx + ox)) { ok = false; break; }
+    if (rx < 4 || ry < 4 || rx > w - 5 || ry > h - 5) return null;
+    if (!solid(wy * w + wx)) return null;
+    for (let oy = -2; oy <= 2; oy++)
+      for (let ox = -2; ox <= 2; ox++) if (!solid((ry + oy) * w + rx + ox)) return null;
     // the wall must sit flush against rock on both sides so the room has one way in
-    if (ok && !(solid((wy + dx) * w + wx + dy) && solid((wy - dx) * w + wx - dy))) ok = false;
-    if (!ok) continue;
+    if (!(solid((wy + dx) * w + wx + dy) && solid((wy - dx) * w + wx - dy))) return null;
     const cells = [];
     for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) { const i = (ry + oy) * w + rx + ox; tiles[i] = T.FLOOR; cells.push(i); }
     tiles[wy * w + wx] = T.CRACKED;
     return { cells, wall: wy * w + wx };
+  };
+  for (let attempt = 0; attempt < 120 && areas.length; attempt++) {
+    const a = areas[Math.floor(R() * areas.length)];
+    const [dx, dy] = DIRS4[Math.floor(R() * 4)];
+    const found = tryAt(a.cells[Math.floor(R() * a.cells.length)], dx, dy);
+    if (found) return found;
+  }
+  // crowded maps: try every spot along every wall, the clearings first, then any trail
+  const pool = [...areas.flatMap((a) => a.cells), ...fallbackCells];
+  const off = Math.floor(R() * Math.max(1, pool.length));
+  for (let k = 0; k < pool.length; k++) {
+    const c = pool[(k + off) % pool.length];
+    for (const [dx, dy] of DIRS4) { const found = tryAt(c, dx, dy); if (found) return found; }
   }
   return null;
+}
+
+// Gates that can be walked around do nothing but waste a key: open them up. (Islands
+// joined by more than one bridge, or a trail looping back, can leave a gate bypassable.)
+function dropBypassableGates(tiles, w, h, start) {
+  const open = (t) => walkable(t) || t === T.DOOR;
+  for (let changed = true; changed;) {
+    changed = false;
+    const seen = new Uint8Array(w * h);
+    const reach = bfs(tiles, w, h, [[start.x, start.y]], open);
+    for (let i = 0; i < w * h; i++) {
+      if (tiles[i] !== T.DOOR || seen[i]) continue;
+      const seg = [], stack = [i];
+      seen[i] = 1;
+      while (stack.length) {
+        const c = stack.pop();
+        seg.push(c);
+        for (const j of [c + 1, c - 1, c + w, c - w]) if (tiles[j] === T.DOOR && !seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+      for (const c of seg) tiles[c] = T.WALL;
+      const without = bfs(tiles, w, h, [[start.x, start.y]], open);
+      let cutsOff = false;
+      for (let j = 0; j < w * h && !cutsOff; j++) if (reach[j] >= 0 && without[j] < 0 && !seg.includes(j)) cutsOff = true;
+      for (const c of seg) tiles[c] = cutsOff ? T.DOOR : T.FLOOR;
+      if (!cutsOff) { changed = true; break; }
+    }
+  }
 }
 
 // ---------- shared population: keys, exit, pickups, monsters ----------
@@ -702,6 +739,7 @@ function populate(n, R, info, map) {
   const areas = map.areas.map((a) => ({ ...a, cells: a.cells.filter((c) => tiles[c] === T.FLOOR) })).filter((a) => a.cells.length >= 4);
   const startArea = 0;
 
+  dropBypassableGates(tiles, w, h, start);
   // door segments = connected groups of DOOR tiles
   const doorSegs = [];
   const seenDoor = new Uint8Array(w * h);
@@ -747,7 +785,9 @@ function populate(n, R, info, map) {
   }
 
   // A secret room behind a cracked wall holds this level's hidden Rune Stone.
-  const secret = addSecret(tiles, w, h, areas.slice(1).filter((a) => !a.vault), R);
+  const trail = [];
+  for (let i = 0; i < w * h; i++) if (tiles[i] === T.FLOOR && !inAreaEarly.has(i) && Math.abs((i % w) - start.x) + Math.abs(((i / w) | 0) - start.y) > 8) trail.push(i);
+  const secret = addSecret(tiles, w, h, areas.slice(1).filter((a) => !a.vault), R, trail);
 
   // Exit goes in the open area farthest from the start (never a vault).
   const fullDist = bfs(tiles, w, h, [[start.x, start.y]], walkableOrDoor);

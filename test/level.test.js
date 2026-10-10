@@ -78,7 +78,7 @@ test('every level hides exactly one Rune Stone, and secret rooms open only by br
     assert.equal(runes.length, 1, `level ${n} rune count`);
     const r = runes[0];
     assert.equal(L.tiles[r.y * L.w + r.x], T.FLOOR);
-    if (!L.secret) continue;
+    assert.ok(L.secret, `level ${n} has a secret room`);
     const open = (t) => t === T.FLOOR || t === T.EXIT || t === T.BRIDGE || t === T.SPIKES || t === T.DOOR;
     const before = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], open);
     const after = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], (t) => open(t) || t === T.CRACKED);
@@ -151,5 +151,44 @@ test('each realm has its own monsters, and later stages add tougher ones', async
     const L = generateLevel(n);
     for (const e of [...L.enemies, ...L.generators]) assert.ok(allowed.has(e.type), `level ${n}: ${e.type} belongs to its realm`);
     if (n % 4 !== 1 && n % 4 !== 0) { const before = enemyWeights(n - 1).map(([k]) => k); assert.ok(enemyWeights(n).some(([k]) => !before.includes(k)), `stage ${n} brings a new monster`); }
+  }
+});
+
+// Opening this gate must be the only way to reach something.
+function bypassableGates(L) {
+  const { w, h } = L;
+  const tiles = L.tiles.slice();
+  const open = (t) => walkable(t) || t === T.DOOR;
+  const reach = bfs(tiles, w, h, [[L.start.x, L.start.y]], open);
+  const seen = new Uint8Array(w * h);
+  let bad = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (tiles[i] !== T.DOOR || seen[i]) continue;
+    const seg = [], st = [i];
+    seen[i] = 1;
+    while (st.length) { const c = st.pop(); seg.push(c); for (const j of [c + 1, c - 1, c + w, c - w]) if (tiles[j] === T.DOOR && !seen[j]) { seen[j] = 1; st.push(j); } }
+    for (const c of seg) tiles[c] = T.WALL;
+    const without = bfs(tiles, w, h, [[L.start.x, L.start.y]], open);
+    for (const c of seg) tiles[c] = T.DOOR;
+    let cuts = false;
+    for (let j = 0; j < w * h && !cuts; j++) if (reach[j] >= 0 && without[j] < 0 && !seg.includes(j)) cuts = true;
+    if (!cuts) bad++;
+  }
+  return bad;
+}
+
+test('in every realm, no gate can be walked around and the hidden Rune Stone is always in a secret room', () => {
+  for (let n = 1; n <= 16; n++) {
+    if (levelInfo(n).isBoss) continue;
+    for (let seed = 0; seed <= 25; seed++) {
+      const L = seed ? generateLevel(n, seed * 7727 + n * 31) : generateLevel(n);
+      assert.equal(bypassableGates(L), 0, `level ${n} seed ${seed}: a gate can be walked around`);
+      assert.ok(L.secret, `level ${n} seed ${seed}: no secret room`);
+      const r = L.items.find((i) => i.type === 'rune');
+      const open = (t) => walkable(t) || t === T.DOOR;
+      const sealed = bfs(L.tiles, L.w, L.h, [[L.start.x, L.start.y]], open);
+      assert.equal(sealed[r.y * L.w + r.x], -1, `level ${n} seed ${seed}: the Rune Stone is out in the open`);
+      assert.ok(solvable(L), `level ${n} seed ${seed}: solvable`);
+    }
   }
 });

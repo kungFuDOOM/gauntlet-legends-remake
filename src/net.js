@@ -8,7 +8,7 @@
 
 // Bump when the snapshot format or level generation changes, so old and new versions of
 // the game don't try to play together.
-export const PROTOCOL = 4;
+export const PROTOCOL = 5;
 export const MAX_GUESTS = 3;
 export const CODE_LENGTH = 8; // 24^8: about 110 billion codes
 const PREFIX = 'glremake-';
