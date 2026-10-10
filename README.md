@@ -116,7 +116,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 
 ```
 index.html        canvas + module entry
-sw.js             service worker: always loads the newest game code after an update
+sw.js             service worker: loads the newest code after an update; keeps the game playable offline
 server.js         zero-dependency static server (npm start)
 src/main.js       game loop and state machine (title, hero select, play, pause, level clear, game over)
 src/game.js       simulation: players, enemies and their AI, generators, projectiles, pickups, traps
