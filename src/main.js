@@ -80,10 +80,16 @@ const stats = new Stats();
 let recordsTab = 0; // page shown on the stats screen
 // the title screen shows the best run
 function topScores() { return stats.top.map((r) => ({ name: CLASSES[r.cls].name, score: r.score, level: r.level })); }
+// A finished run that made the leaderboard gets a mention on the title screen.
+function announceRuns(placed) {
+  if (!placed.length) return;
+  const best = placed[0];
+  toast = { text: `${CLASSES[best.cls].name}: #${best.rank} on the leaderboard with ${best.score.toLocaleString('en-US')} points!`, t: 4, local: true };
+}
 
 function setState(s) {
   if (window.__traceStates) console.log(`state ${state} -> ${s}`);
-  if (s === 'title') { input.split = false; stats.endRuns(); } // a new party starts with one keyboard player
+  if (s === 'title') { input.split = false; announceRuns(stats.endRuns()); } // a new party starts with one keyboard player
   state = s; stateT = 0;
 }
 
@@ -492,7 +498,7 @@ function guestMessage(m) {
     if (state !== m.st || Math.abs(stateT - stT) > 0.5) stateT = stT;
     const entered = state !== m.st && m.st;
     state = m.st;
-    if (entered === 'title') stats.endRuns(); // the host's game is over
+    if (entered === 'title') announceRuns(stats.endRuns()); // the host's game is over
     net.ui = ui;
     slots = ui.slots;
     countdown = ui.cd;
@@ -760,7 +766,7 @@ function render() {
     if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
   } else if (state === 'stats') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
-    drawRecords(ctx, stateT, stats.data, save.progress, save.heroes, unlockedClasses(save.progress), recordsTab);
+    drawRecords(ctx, stateT, stats.data, save.progress, save.heroes, unlockedClasses(save.progress), recordsTab, (r) => stats.isRecent(r));
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
     drawStory(ctx, story, stateT);

@@ -477,7 +477,7 @@ export function drawTitle(ctx, time, hiscores, progress = null, online = false) 
     const h = hiscores[0];
     // with the online button showing, the bottom is full: the high score goes under the logo
     const hy = !online ? 624 : progress ? 264 : 246;
-    outlined(ctx, `HIGH SCORE  ${h.score}  ${h.name.toUpperCase()}  (LEVEL ${h.level})`, VIEW_W / 2, hy, '#ffd040', '#000', 3);
+    outlined(ctx, `HIGH SCORE  ${fmt(h.score)}  ·  ${h.name.toUpperCase()}  ·  ${stageName(h.level).toUpperCase()}`, VIEW_W / 2, hy, '#ffd040', '#000', 3);
   }
 }
 
@@ -971,7 +971,7 @@ function stageName(n) {
 
 // The stats screen. data: see stats.js · progress: the quest save · heroes: saved heroes
 // (for their levels) · unlocked: heroes that can be played · tab: 0-2
-export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab) {
+export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab, isRecent = () => false) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   ctx.fillStyle = 'rgba(4,3,2,0.86)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -999,7 +999,7 @@ export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab) {
 
   if (tab === 0) drawOverview(ctx, data, progress, unlocked);
   else if (tab === 1) drawHeroTable(ctx, data, heroes, unlocked);
-  else drawLeaderboard(ctx, data);
+  else drawLeaderboard(ctx, data, isRecent, time);
 
   ctx.textAlign = 'center';
   ctx.font = `15px ${SANS}`;
@@ -1038,8 +1038,18 @@ function drawOverview(ctx, d, progress, unlocked) {
   outlined(ctx, `Online games: ${fmt(d.online)}     ·     Treasure rooms: ${fmt(d.treasure)}     ·     Keys used: ${fmt(d.keys)}     ·     Secret heroes: ${secrets} / 4`, VIEW_W / 2, 554, '#c8b890', '#000', 3);
 }
 
+// Table columns are laid out for x 40..920; with touch controls on screen the tables stop
+// short of the buttons down the right side, so columns are squeezed toward the left.
+function tableX() {
+  const k = document.body.classList.contains('touching') ? (812 - 40) / (920 - 40) : 1;
+  const X = (x) => 40 + (x - 40) * k;
+  X.w = (VIEW_W - 80) * k;
+  return X;
+}
+
 function drawHeroTable(ctx, d, heroes, unlocked) {
-  const cols = [['HERO', 60, 'left'], ['LEVEL', 330, 'center'], ['TIME', 430, 'center'], ['KILLS', 540, 'center'], ['DEATHS', 650, 'center'], ['GOLD', 760, 'center'], ['BEST', 900, 'right']];
+  const X = tableX();
+  const cols = [['HERO', 60, 'left'], ['LEVEL', 330, 'center'], ['TIME', 430, 'center'], ['KILLS', 540, 'center'], ['DEATHS', 650, 'center'], ['GOLD', 760, 'center'], ['BEST', 900, 'right']].map(([n, x, a]) => [n, X(x), a]);
   ctx.font = `bold 15px ${SANS}`;
   for (const [name, x, align] of cols) { ctx.textAlign = align; outlined(ctx, name, x, 150, '#a89870', '#000', 3); }
   const hidden = 4 - unlocked.filter((c) => CLASSES[c].secret).length;
@@ -1048,7 +1058,7 @@ function drawHeroTable(ctx, d, heroes, unlocked) {
   unlocked.forEach((cls, i) => {
     const y = 166 + i * rh, h = d.heroes[cls], saved = heroes[cls];
     ctx.fillStyle = i % 2 ? 'rgba(40,30,16,0.55)' : 'rgba(20,15,8,0.55)';
-    ctx.fillRect(40, y, VIEW_W - 80, rh - 4);
+    ctx.fillRect(40, y, X.w, rh - 4);
     const ty = y + rh / 2 + 5;
     ctx.textAlign = 'left';
     ctx.font = `italic bold ${Math.min(22, rh * 0.5)}px ${SERIF}`;
@@ -1064,9 +1074,10 @@ function drawHeroTable(ctx, d, heroes, unlocked) {
   }
 }
 
-function drawLeaderboard(ctx, d) {
+function drawLeaderboard(ctx, d, isRecent = () => false, time = 0) {
+  const X = tableX();
   const runs = d.runs.slice(0, 10);
-  const cols = [['#', 64, 'center'], ['HERO', 100, 'left'], ['SCORE', 400, 'right'], ['REACHED', 440, 'left'], ['PARTY', 690, 'left'], ['DATE', 900, 'right']];
+  const cols = [['#', 64, 'center'], ['HERO', 100, 'left'], ['SCORE', 400, 'right'], ['REACHED', 440, 'left'], ['PARTY', 690, 'left'], ['DATE', 900, 'right']].map(([n, x, a]) => [n, X(x), a]);
   ctx.font = `bold 15px ${SANS}`;
   for (const [name, x, align] of cols) { ctx.textAlign = align; outlined(ctx, name, x, 150, '#a89870', '#000', 3); }
   if (!runs.length) {
@@ -1079,22 +1090,28 @@ function drawLeaderboard(ctx, d) {
   runs.forEach((r, i) => {
     const y = 162 + i * 43, ty = y + 27;
     ctx.fillStyle = i % 2 ? 'rgba(40,30,16,0.55)' : 'rgba(20,15,8,0.55)';
-    ctx.fillRect(40, y, VIEW_W - 80, 39);
+    ctx.fillRect(40, y, X.w, 39);
+    const recent = isRecent(r);
+    if (recent) { // your latest run: a glowing outline
+      ctx.strokeStyle = `rgba(255,216,96,${0.6 + Math.sin(time * 4) * 0.3})`; ctx.lineWidth = 2;
+      ctx.strokeRect(41, y + 1, X.w - 2, 37); ctx.lineWidth = 1;
+    }
     ctx.textAlign = 'center';
     ctx.font = `bold 21px ${SANS}`;
-    outlined(ctx, String(i + 1), 64, ty, medal[i] || '#c8b890', '#000', 3);
+    outlined(ctx, String(i + 1), X(64), ty, medal[i] || '#c8b890', '#000', 3);
     ctx.textAlign = 'left';
     ctx.font = `italic bold 21px ${SERIF}`;
-    outlined(ctx, `${CLASSES[r.cls].name.toUpperCase()}${r.lvl ? `  LV${r.lvl}` : ''}`, 100, ty, CLASSES[r.cls].color, '#000', 4);
+    outlined(ctx, `${CLASSES[r.cls].name.toUpperCase()}${r.lvl ? `  LV${r.lvl}` : ''}`, X(100), ty, CLASSES[r.cls].color, '#000', 4);
     ctx.textAlign = 'right';
     ctx.font = `bold 21px ${SANS}`;
-    outlined(ctx, fmt(r.score), 400, ty, '#ffe070', '#000', 3);
+    outlined(ctx, fmt(r.score), X(400), ty, '#ffe070', '#000', 3);
     ctx.textAlign = 'left';
     ctx.font = `19px ${SANS}`;
-    outlined(ctx, stageName(r.level), 440, ty, '#f0e6d0', '#000', 3);
-    outlined(ctx, r.mode === 'solo' ? 'Solo' : `${r.mode === 'online' ? 'Online' : 'Co-op'} ${r.players}P`, 690, ty, r.mode === 'online' ? '#8fe0ff' : '#f0e6d0', '#000', 3);
+    outlined(ctx, stageName(r.level), X(440), ty, '#f0e6d0', '#000', 3);
+    outlined(ctx, r.mode === 'solo' ? 'Solo' : `${r.mode === 'online' ? 'Online' : 'Co-op'} ${r.players}P`, X(690), ty, r.mode === 'online' ? '#8fe0ff' : '#f0e6d0', '#000', 3);
     ctx.textAlign = 'right';
-    outlined(ctx, r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—', 900, ty, '#c8b890', '#000', 3);
+    if (recent) { ctx.font = `bold 19px ${SANS}`; outlined(ctx, 'NEW', X(900), ty, '#ffd860', '#000', 3); }
+    else outlined(ctx, r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—', X(900), ty, '#c8b890', '#000', 3);
   });
 }
 

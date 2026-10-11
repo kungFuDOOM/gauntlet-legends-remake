@@ -86,7 +86,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Treasure rooms:** beat a guardian and the party gets 25 seconds in a vault heaped with gold, gems and chests.
 - **Secret heroes:** four more heroes join as the quest goes on: the **Minotaur** (defeat the Dragon), the **Falconess** (defeat the Chimera), the **Jackal** (defeat the Plague Fiend) and the **Tigress** (recover 12 Rune Stones).
 - **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
-- **Stats & leaderboard:** the **🏆 STATS & LEADERBOARD** button on the title screen (or `L`) opens the Hall of Legends: lifetime stats (time played, monsters slain by type, gold, deaths, potions, guardians...), a table of every hero you've played, and the 10 best runs (a run is one hero's score from starting a game until leaving it, solo, co-op or online). They're kept in this browser; online guests' stats count their own hero.
+- **Stats & leaderboard:** the **🏆 STATS & LEADERBOARD** button on the title screen (or `L`) opens the Hall of Legends: lifetime stats (time played, monsters slain by type, gold, deaths, potions, guardians...), a table of every hero you've played, and the 10 best runs (a run is one hero's score from starting a game until leaving it, solo, co-op or online; a tie keeps the earlier run ahead). Game Over and the title screen tell you when a run makes the board, and your latest runs are marked NEW. They're kept in this browser; online guests' stats count their own hero.
 
 
 - **Eight heroes**, each with its own stats and turbo attack:

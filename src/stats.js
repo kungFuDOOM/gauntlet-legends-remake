@@ -13,7 +13,7 @@ const TOP = 10;
 const COUNTERS = ['kills', 'gens', 'deaths', 'gold', 'food', 'potions', 'turbo', 'keys'];
 
 function blank() {
-  const s = { v: 1, time: 0, games: 0, online: 0, levels: 0, bosses: 0, treasure: 0, byEnemy: {}, heroes: {}, runs: [] };
+  const s = { v: 1, time: 0, games: 0, online: 0, levels: 0, bosses: 0, treasure: 0, byEnemy: {}, heroes: {}, runs: [], recent: [] };
   for (const k of COUNTERS) s[k] = 0;
   return s;
 }
@@ -47,6 +47,7 @@ export function loadStats() {
       }
     }
     if (Array.isArray(raw.runs)) s.runs = raw.runs.slice(0, TOP * 2).map(cleanRun).filter(Boolean);
+    if (Array.isArray(raw.recent)) s.recent = raw.recent.slice(0, 4).filter((id) => typeof id === 'string').map((id) => id.slice(0, 24));
   } else {
     // the old high score list becomes the first leaderboard
     try {
@@ -75,7 +76,8 @@ function cleanRun(r) {
 
 const heroKey = (p) => `${p.slot}:${p.cls}`;
 
-function sortRuns(runs) { runs.sort((a, b) => b.score - a.score || b.date - a.date); }
+// best first; on a tie the run that got there first keeps its place
+function sortRuns(runs) { runs.sort((a, b) => b.score - a.score || a.date - b.date); }
 
 export class Stats {
   constructor() {
@@ -169,12 +171,24 @@ export class Stats {
     this.dirty = true;
   }
 
-  // The game is over or left: these runs are finished.
+  // The game is over or left: these runs are finished. Returns the ones that made the
+  // board ({ cls, rank, score }) so the player can be told.
   endRuns() {
+    const placed = [];
+    const ended = [...this.runs.values()].filter((r) => r.score > 0);
+    for (const r of ended) {
+      const i = this.data.runs.indexOf(r);
+      if (i >= 0 && i < TOP) placed.push({ cls: r.cls, rank: i + 1, score: r.score });
+    }
+    if (ended.length) { this.data.recent = ended.map((r) => r.id).slice(0, 4); this.dirty = true; }
     this.runs.clear();
     this.seen.clear();
     this.save();
+    return placed.sort((a, b) => a.rank - b.rank);
   }
+
+  // Runs from the last game (or the one being played), for the board to highlight.
+  isRecent(run) { return this.data.recent.includes(run.id) || [...this.runs.values()].includes(run); }
 
   // Place on the leaderboard (1-based) of a hero's current run, or 0.
   rankOf(p) {

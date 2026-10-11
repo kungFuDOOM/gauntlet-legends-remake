@@ -126,3 +126,32 @@ test('the old high score list is brought over, and damaged data is ignored', () 
   store.set('gl-remake-stats', '{not json');
   assert.equal(loadStats().kills, 0);
 });
+
+test('a tie keeps the earlier run ahead, and finishing a game reports places on the board', () => {
+  const s = new Stats();
+  const a = hero(0, 'warrior', 1000);
+  s.tick(1, [a], 1, solo);
+  s.runs.get('0:warrior').date = 1000; // the first run, long ago
+  assert.deepEqual(s.endRuns(), [{ cls: 'warrior', rank: 1, score: 1000 }]);
+  const b = hero(0, 'wizard', 1000);
+  s.tick(1, [b], 1, solo);
+  assert.equal(s.top[0].cls, 'warrior', 'the earlier run keeps first place');
+  assert.equal(s.top[1].cls, 'wizard');
+  const placed = s.endRuns();
+  assert.deepEqual(placed, [{ cls: 'wizard', rank: 2, score: 1000 }]);
+  // the last game's run is remembered (for the board's NEW mark), even after a reload
+  const fresh = new Stats();
+  assert.ok(fresh.isRecent(fresh.top[1]) && !fresh.isRecent(fresh.top[0]));
+  // a game with no points reports nothing and keeps the last highlight
+  s.tick(1, [hero(0, 'archer', 0)], 1, solo);
+  assert.deepEqual(s.endRuns(), []);
+  assert.ok(new Stats().isRecent(new Stats().top[1]));
+});
+
+test('runs that fall off the top 10 are not announced', () => {
+  const s = new Stats();
+  for (let i = 0; i < 10; i++) { s.tick(1, [hero(0, 'warrior', 5000 + i)], 1, solo); s.endRuns(); }
+  s.tick(1, [hero(0, 'dwarf', 10)], 1, solo);
+  assert.deepEqual(s.endRuns(), []);
+  assert.ok(!loadStats().runs.some((r) => r.cls === 'dwarf'));
+});
