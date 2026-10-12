@@ -160,6 +160,13 @@ export const TURBO_COST = 35;
 export const MAX_KEYS = 9;
 export const MAX_POTIONS = 9;
 
+// Points. Everything a hero scores on a stage is worth more the deeper the stage (x1 on the
+// first, x2.5 on the last), and half on a stage the quest has already cleared, so pushing on
+// beats farming. Clearing a stage pays a bonus: a flat amount, time under par, and no deaths.
+export const REPLAY_POINTS = 0.5;
+export const STAGE_BONUS = { clear: 500, boss: 2000, par: 300, bossPar: 180, perSecond: 5, flawless: 1000 };
+export function stagePoints(n) { return Math.round(100 + Math.max(0, Math.min(n, 16) - 1) * 10) / 100; }
+
 // How tough a level is. Monsters grow with the stage (1-16) and the party's size; rewards
 // grow with the realm. Every stage is a step harder than the last, from a first stage that
 // already asks for some care.

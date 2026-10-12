@@ -1,8 +1,10 @@
 // Lifetime stats and the leaderboard, kept in this browser.
 //
 // Stats cover the heroes played on this device (an online guest's own hero included); the
-// leaderboard keeps the 10 best runs, a run being one hero's score from starting a game to
-// leaving it. Everything is saved every few seconds and when the page is hidden, so a closed
+// leaderboard keeps the 10 best runs. A run is one saved hero's whole quest: its score is
+// saved with the hero, so coming back to the quest carries on the same entry (the hero save
+// holds the run's id, see runInfo), until a new quest is started. An online guest's hero is
+// fresh each session, so its run is that session. Everything is saved every few seconds and when the page is hidden, so a closed
 // tab loses at most a moment of play.
 
 import { CLASSES } from './config.js';
@@ -70,7 +72,7 @@ function cleanRun(r) {
     id: label(r.id, 24), cls: r.cls, score: count(r.score, 1e9), level: Math.floor(count(r.level, 16)),
     lvl: Math.floor(count(r.lvl, 999)), kills: count(r.kills, 1e9), time: count(r.time, 1e8),
     mode: ['solo', 'coop', 'online'].includes(r.mode) ? r.mode : 'solo', players: Math.max(1, Math.floor(count(r.players, 4))),
-    date: count(r.date, 1e14),
+    date: count(r.date, 1e14), won: !!r.won,
   };
 }
 
@@ -103,10 +105,33 @@ export class Stats {
     this.dirty = true;
   }
 
-  // A game begins (or a hero joins one) on this device.
+  // A game begins (or a hero joins one) on this device: the hero's quest goes on (the run
+  // its save names, still on the board or rebuilt from the save) or a new one starts.
   startRun(p, mode, players) {
-    this.runs.set(heroKey(p), { id: Math.random().toString(36).slice(2, 12), cls: p.cls, score: 0, level: 0, lvl: p.lvl || 1, kills: 0, time: 0, mode, players, date: Date.now() });
+    const saved = p.savedRun && typeof p.savedRun === 'object' && typeof p.savedRun.id === 'string' && p.savedRun.id ? p.savedRun : null;
+    let run = saved && this.data.runs.find((r) => r.id === saved.id && r.cls === p.cls);
+    if (!run && saved) run = cleanRun({ ...saved, cls: p.cls });
+    if (!run) run = { id: Math.random().toString(36).slice(2, 12), cls: p.cls, score: 0, level: 0, lvl: p.lvl || 1, kills: 0, time: 0, mode, players, date: Date.now(), won: false };
+    run.score = Math.max(run.score, p.score || 0);
+    if (mode !== 'solo' && run.mode === 'solo') run.mode = mode;
+    run.players = Math.max(run.players, players);
+    this.runs.set(heroKey(p), run);
+    if (run.score > 0) this.board(run);
     this.hero(p.cls).games++;
+    this.dirty = true;
+  }
+
+  // What a hero's save keeps of its run, so the quest's entry carries on next time.
+  runInfo(p) {
+    const r = this.runs.get(heroKey(p));
+    if (!r) return p.savedRun || null;
+    const { id, score, level, time, mode, players, date, won } = r;
+    return { id, score, level, time, mode, players, date, won };
+  }
+
+  // The quest is won: the heroes' entries say so.
+  questWon(heroes) {
+    for (const p of heroes) { const r = this.runs.get(heroKey(p)); if (r) r.won = true; }
     this.dirty = true;
   }
 
@@ -139,8 +164,8 @@ export class Stats {
       if (players.mode !== 'solo' && run.mode === 'solo') run.mode = players.mode;
       if (levelNum > run.level) run.level = levelNum;
       run.lvl = p.lvl || run.lvl;
-      run.kills = p.kills || 0;
-      if (p.score > run.score) { // (a run's best: continuing after a game over halves the score)
+      run.kills = Math.max(run.kills, p.kills || 0);
+      if (p.score > run.score) { // (a run's best: dying costs points earned on the stage)
         run.score = p.score;
         if (run.score > h.best) h.best = run.score;
         if (run.score > 0) this.board(run);

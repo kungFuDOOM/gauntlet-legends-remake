@@ -109,6 +109,8 @@ test('guests shrug off malicious or malformed snapshots from a host', async () =
   assert.deepEqual(cleanEvents([['a', 'hasOwnProperty'], ['a', 'join', 'x'.repeat(99)]]).map((e) => e[1]), ['join']);
 
   // menu state
+  const clear = cleanUi('levelclear', { ci: { level: 5, name: 'x', bonus: { time: 1e9, mul: 'lots', rows: [{ slot: 9, clear: -5, time: 300, flawless: 1e12 }, 'junk'] } } });
+  assert.deepEqual(clear.ci.bonus, { time: 1e6, mul: 0, rows: [{ slot: 3, clear: 0, time: 300, flawless: 1e5 }] });
   assert.equal(cleanUi('hacked', {}), null);
   const ui = cleanUi('select', {
     slots: [{ cls: '__proto__' }, { cls: 'wizard', source: 'net1', ready: 1 }, 5],

@@ -155,3 +155,82 @@ test('runs that fall off the top 10 are not announced', () => {
   assert.deepEqual(s.endRuns(), []);
   assert.ok(!loadStats().runs.some((r) => r.cls === 'dwarf'));
 });
+
+test('points are worth more on deeper stages and half on a stage already cleared', () => {
+  const g = new Game();
+  const p = g.addPlayer(0, 'kb', 'warrior');
+  g.isCleared = (n) => n === 3;
+  const grunt = (n) => { g.startLevel(n); const before = p.score; g.onEnemyKilled({ type: 'grunt', def: { score: 100, xp: 0, color: '#fff' }, x: 0, y: 0, hp: 0 }, p); return p.score - before; };
+  assert.equal(grunt(1), 100);
+  assert.equal(grunt(16), 250);
+  assert.equal(grunt(3), 60, 'stage 3 (x1.2) is a replay: half');
+  // a treasure room pays like the guardian's stage before it
+  g.isCleared = () => false;
+  g.startLevel(8);
+  g.startTreasure(1);
+  assert.equal(g.scoreMul, 1.7);
+});
+
+test('clearing a stage pays a bonus: cleared, time under par, no deaths', () => {
+  const g = new Game();
+  const a = g.addPlayer(0, 'kb', 'warrior'), b = g.addPlayer(1, 'kb2', 'valkyrie');
+  g.startLevel(1);
+  g.time = 100;
+  g.killPlayer(b);
+  const before = [a.score, b.score];
+  const bonus = g.stageBonus(false);
+  assert.deepEqual(bonus.rows[0], { slot: 0, clear: 500, time: 1000, flawless: 1000 });
+  assert.deepEqual(bonus.rows[1], { slot: 1, clear: 500, time: 1000, flawless: 0 }, 'a hero who died gets no flawless bonus');
+  assert.equal(a.score - before[0], 2500);
+  assert.equal(b.score - before[1], 1500);
+  // past par there's no time bonus; dying and continuing costs half of what the stage earned
+  g.startLevel(16);
+  g.time = 999;
+  assert.equal(g.stageBonus(true).rows[0].time, 0);
+  const start = a.score;
+  g.startLevel(2);
+  g.addScore(a, 1000);
+  g.killPlayer(a);
+  g.respawn(a);
+  assert.equal(a.score, start + 550);
+});
+
+test('a run is the whole quest: it carries on from the hero save, across sessions', () => {
+  const g = new Game();
+  let p = g.addPlayer(0, 'kb', 'archer');
+  p.score = 4000; p.kills = 12;
+  let s = new Stats();
+  s.tick(1, [p], 3, solo);
+  const saved = { ...g.heroSave(p), run: s.runInfo(p) };
+  assert.equal(saved.score, 4000);
+  s.endRuns();
+  // next session: the same hero, and the same entry, still climbing
+  s = new Stats();
+  p = g.addPlayer(0, 'kb', 'archer', JSON.parse(JSON.stringify(saved)));
+  assert.equal(p.score, 4000);
+  assert.equal(p.kills, 12);
+  p.score = 6500;
+  s.tick(1, [p], 5, solo);
+  assert.equal(s.top.length, 1);
+  assert.equal(s.top[0].id, saved.run.id);
+  assert.deepEqual([s.top[0].score, s.top[0].level, s.top[0].kills], [6500, 5, 12]);
+  assert.ok(Math.abs(s.top[0].time - 2) < 1e-9, 'time played adds up over the quest');
+  // the quest is won: its entry says so, after a reload too
+  s.questWon([p]);
+  s.endRuns();
+  assert.equal(loadStats().runs[0].won, true);
+
+  // an entry that fell off the board comes back from the hero's save
+  store.clear();
+  s = new Stats();
+  p = g.addPlayer(0, 'kb', 'archer', JSON.parse(JSON.stringify(saved)));
+  s.tick(1, [p], 3, solo);
+  assert.equal(s.top[0].id, saved.run.id);
+  assert.equal(s.top[0].score, 4000);
+  // a hero with no run (a new quest) starts a new entry
+  const q = g.addPlayer(1, 'kb2', 'wizard', { lvl: 3 });
+  q.score = 10;
+  s.tick(1, [q], 1, solo);
+  assert.equal(s.top.length, 2);
+  assert.notEqual(s.top[1].id, saved.run.id);
+});

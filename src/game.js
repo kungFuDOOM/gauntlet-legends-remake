@@ -2,7 +2,7 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
 import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable, enemyWeights } from './level.js';
 import { sfx, say } from './audio.js';
@@ -32,6 +32,8 @@ export class Game {
     this.fx = null;       // when hosting online: effects to forward to guests (see net.js)
     this.levelSeq = 0;    // counts level loads, so guests notice even a restart of the same level
     this.onStat = null;   // (player, key, amount, detail): lifetime stats and records (see stats.js)
+    this.isCleared = () => false; // (stage) has the quest cleared it before? Replays score less
+    this.scoreMul = 1;    // what points are worth on this stage (see stagePoints)
   }
 
   stat(p, key, n = 1, sub) { if (p && this.onStat) this.onStat(p, key, n, sub); }
@@ -50,7 +52,8 @@ export class Game {
       warnT: 0, deadT: 0, drain: 0, gold: 0, kills: 0,
     };
     if (saved) {
-      for (const k of ['lvl', 'xp', 'strength', 'shotDmg', 'armor', 'speed', 'magic', 'gold', 'potions']) if (typeof saved[k] === 'number') p[k] = saved[k];
+      for (const k of ['lvl', 'xp', 'strength', 'shotDmg', 'armor', 'speed', 'magic', 'gold', 'potions', 'score', 'kills']) if (typeof saved[k] === 'number' && Number.isFinite(saved[k])) p[k] = saved[k];
+      p.savedRun = saved.run; // the quest's leaderboard entry, picked up by stats.js
       p.maxHp = def.hp + (p.lvl - 1) * 40;
       p.hp = p.maxHp;
     }
@@ -60,8 +63,29 @@ export class Game {
 
   // The parts of a hero worth keeping between sessions.
   heroSave(p) {
-    const { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions } = p;
-    return { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions };
+    const { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions, score, kills } = p;
+    return { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions, score, kills };
+  }
+
+  // Points for a hero, worth more on deeper stages and less on replays. Returns what was added.
+  addScore(p, n) {
+    const pts = Math.round(n * this.scoreMul);
+    p.score += pts;
+    return pts;
+  }
+
+  // A stage is cleared: each hero's bonus (cleared, time under par, no deaths), added to
+  // their score. Returns { time, rows: [{ slot, clear, time, flawless }] } for the clear screen.
+  stageBonus(boss) {
+    const B = STAGE_BONUS;
+    const left = Math.max(0, (boss ? B.bossPar : B.par) - this.time);
+    const rows = this.allPlayers().map((p) => {
+      const row = { slot: p.slot, clear: this.addScore(p, boss ? B.boss : B.clear), time: 0, flawless: 0 };
+      row.time = this.addScore(p, Math.floor(left / 2) * 2 * B.perSecond);
+      if (!p.stageDeaths && p.alive) row.flawless = this.addScore(p, B.flawless);
+      return row;
+    });
+    return { time: Math.round(this.time), mul: this.scoreMul, rows };
   }
 
   // Drop-in mid game: spawn next to the other players.
@@ -153,6 +177,9 @@ export class Game {
     this.flash = 0; this.shake = 0; this.exitReached = false; this.boss = null;
     this.flowT = 0; this.exploreT = 0; this.time = 0;
     this.crackHp = new Map(); this.runesFound = [];
+    // a treasure room pays like the guardian's stage before it
+    if (!L.treasure) this.scoreMul = L.n && !L.hub && !L.tutorial ? stagePoints(L.n) * (this.isCleared(L.n) ? REPLAY_POINTS : 1) : 1;
+    for (const p of this.allPlayers()) { p.stageStart = p.score; p.stageDeaths = 0; }
     this.refreshDifficulty();
     this.banner = { text: L.info.stageName, sub: L.info.theme.name + newFoes(L), t: 3.5 };
   }
@@ -500,7 +527,7 @@ export class Game {
     // Exit
     if (this.tile(Math.floor(p.x / TILE), Math.floor(p.y / TILE)) === T.EXIT && !this.exitReached) {
       this.exitReached = true;
-      p.score += 500;
+      this.addScore(p, 500);
       sfx.exit();
     }
 
@@ -531,6 +558,7 @@ export class Game {
 
   killPlayer(p) {
     p.alive = false; p.hp = 0; p.deadT = 0; p.dash = null;
+    p.stageDeaths = (p.stageDeaths || 0) + 1;
     this.stat(p, 'deaths');
     this.burst(p.x, p.y, p.color, 30, 200);
     sfx.die();
@@ -543,7 +571,7 @@ export class Game {
     const pos = anchor ? this.findOpenSpotNear(anchor.x, anchor.y) : this.spawnPoint(p.slot);
     p.x = pos.x; p.y = pos.y;
     p.alive = true; p.hp = p.def.hp; p.invuln = 3; p.keys = 0; p.buffs = {};
-    p.score = Math.floor(p.score * 0.9);
+    p.score -= Math.floor(Math.max(0, p.score - (p.stageStart ?? p.score)) / 2); // half of what this stage earned
     sfx.join();
     this.text(p.x, p.y - 20, 'CONTINUE!', '#ffe070', 1.5);
   }
@@ -761,7 +789,7 @@ export class Game {
   onEnemyKilled(e, p) {
     e.hp = 0;
     this.burst(e.x, e.y, e.def.color || '#888', e.type === 'boss' ? 80 : 12, e.type === 'boss' ? 300 : 140);
-    if (p) { p.score += e.def.score; this.gainXp(p, Math.round(e.def.xp * this.diff.xp)); p.kills++; this.stat(p, 'kills', 1, e.type); }
+    if (p) { this.addScore(p, e.def.score); this.gainXp(p, Math.round(e.def.xp * this.diff.xp)); p.kills++; this.stat(p, 'kills', 1, e.type); }
     if (e.type === 'death') this.text(e.x, e.y - 20, 'DEATH DEFEATED! +1000', '#ffe070', 2);
     if (e.type === 'boss') this.onBossKilled(e);
   }
@@ -790,7 +818,7 @@ export class Game {
     if (g.hp <= 0) {
       sfx.explode();
       this.burst(g.x, g.y, '#c0a070', 25, 180);
-      if (p) { p.score += 100; this.gainXp(p, 15); this.stat(p, 'gens'); }
+      if (p) { this.addScore(p, 100); this.gainXp(p, 15); this.stat(p, 'gens'); }
       this.text(g.x, g.y - 20, '+100', '#ffe070');
     }
   }
@@ -1135,12 +1163,12 @@ export class Game {
       case 'food':
         p.hp += FOOD_HEAL; sfx.food(); this.stats.food++; this.stat(p, 'food'); this.text(it.x, it.y - 10, `+${FOOD_HEAL}`, '#80ff80'); return true;
       case 'gold':
-        { const gv = Math.round(50 * this.diff.gold); p.score += 100; p.gold += gv; this.stat(p, 'gold', gv); sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#ffe070'); return true; }
+        { const gv = Math.round(50 * this.diff.gold); this.addScore(p, 100); p.gold += gv; this.stat(p, 'gold', gv); sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#ffe070'); return true; }
       case 'gem':
-        { const gv = Math.round(200 * this.diff.gold); p.score += 500; p.gold += gv; this.stat(p, 'gold', gv); sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#80e0ff'); return true; }
+        { const gv = Math.round(200 * this.diff.gold); this.addScore(p, 500); p.gold += gv; this.stat(p, 'gold', gv); sfx.gold(); this.text(it.x, it.y - 10, `+${gv} GOLD`, '#80e0ff'); return true; }
       case 'rune': {
         const guardian = it.sub !== 'hidden';
-        p.score += guardian ? 5000 : 2500;
+        this.addScore(p, guardian ? 5000 : 2500);
         p.gold += guardian ? 500 : 300;
         this.stat(p, 'gold', guardian ? 500 : 300);
         this.runesFound.push(guardian ? 'guardian' : 'hidden');

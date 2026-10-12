@@ -1095,6 +1095,9 @@ function drawLeaderboard(ctx, d, isRecent = () => false, time = 0) {
     outlined(ctx, 'No legends yet. Go and make your name!', VIEW_W / 2, 320, '#c8b890', '#000', 3);
     return;
   }
+  ctx.textAlign = 'center';
+  ctx.font = `italic 14px ${SANS}`;
+  outlined(ctx, 'Each entry is one hero\'s whole quest · deeper stages score more · replayed stages score half', VIEW_W / 2, 607, '#a89870', '#000', 3);
   const medal = ['#ffd84a', '#d8dce8', '#e09a5a'];
   runs.forEach((r, i) => {
     const y = 162 + i * 43, ty = y + 27;
@@ -1116,7 +1119,8 @@ function drawLeaderboard(ctx, d, isRecent = () => false, time = 0) {
     outlined(ctx, fmt(r.score), X(400), ty, '#ffe070', '#000', 3);
     ctx.textAlign = 'left';
     ctx.font = `19px ${SANS}`;
-    outlined(ctx, stageName(r.level), X(440), ty, '#f0e6d0', '#000', 3);
+    if (r.won) outlined(ctx, '★ Quest complete', X(440), ty, '#ffd84a', '#000', 3);
+    else outlined(ctx, stageName(r.level), X(440), ty, '#f0e6d0', '#000', 3);
     outlined(ctx, r.mode === 'solo' ? 'Solo' : `${r.mode === 'online' ? 'Online' : 'Co-op'} ${r.players}P`, X(690), ty, r.mode === 'online' ? '#8fe0ff' : '#f0e6d0', '#000', 3);
     ctx.textAlign = 'right';
     if (recent) { ctx.font = `bold 19px ${SANS}`; outlined(ctx, 'NEW', X(900), ty, '#ffd860', '#000', 3); }

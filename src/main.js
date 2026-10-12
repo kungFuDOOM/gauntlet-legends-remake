@@ -2,7 +2,7 @@
 //   title -> (intro story) -> hero select -> realm map -> play <-> paused
 //   play -> level clear -> shop -> realm map ... -> Skorne -> ending story -> ending
 
-import { VIEW_W, VIEW_H, CLASSES, CLASS_ORDER, MAX_PLAYERS } from './config.js';
+import { VIEW_W, VIEW_H, CLASSES, CLASS_ORDER, MAX_PLAYERS, stagePoints } from './config.js';
 import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { Tutorial, tutorialView } from './tutorial.js';
@@ -79,6 +79,7 @@ let magicHint = { t: 20, shown: 0 }; // reminders that magic exists
 const stats = new Stats();
 let recordsTab = 0; // page shown on the stats screen
 // the title screen shows the best run
+const fmtPts = (n) => Math.round(n).toLocaleString('en-US');
 function topScores() { return stats.top.map((r) => ({ name: CLASSES[r.cls].name, score: r.score, level: r.level })); }
 // A finished run that made the leaderboard gets a mention on the title screen.
 function announceRuns(placed) {
@@ -126,7 +127,7 @@ let save = loadSave();
 // Saves the quest and the heroes of the players on this machine (online guests' heroes are
 // theirs for the session only, so they never overwrite the host's saved heroes).
 function persist() {
-  if (game) for (const p of game.allPlayers()) if (!isNet(p.source)) save.heroes[p.cls] = game.heroSave(p);
+  if (game) for (const p of game.allPlayers()) if (!isNet(p.source)) save.heroes[p.cls] = { ...game.heroSave(p), run: stats.runInfo(p) };
   writeSave(save);
 }
 let story = null;     // { lines, idx, t, next }
@@ -261,6 +262,7 @@ function CLASSES_NAME(cls) { return cls[0].toUpperCase() + cls.slice(1); }
 
 function startGame() {
   game = new Game();
+  game.isCleared = (n) => !!save.progress.completed[n]; // replays score half
   // this device's heroes count toward its stats (not online guests', and not the training)
   game.onStat = (p, key, n, sub) => { if (!isNet(p.source) && game && game.level && !game.level.tutorial) stats.add(p, key, n, sub); };
   stats.gameStarted(!!net);
@@ -648,13 +650,16 @@ function updatePlay(dt) {
     const info = levelInfo(n);
     const runesBefore = runeCount(save.progress);
     const unlockedBefore = unlockedClasses(save.progress);
+    const bonus = game.stageBonus(info.isBoss);
     completeLevel(save.progress, n, game.runesFound);
     stats.levelCleared(game.allPlayers().filter((p) => !isNet(p.source)), info.isBoss);
     const fresh = unlockedClasses(save.progress).filter((c) => !unlockedBefore.includes(c));
     for (const c of fresh) say(`A secret hero joins the legend: the ${c}!`, `unlock${c}`, 0);
     persist();
-    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, unlocked: fresh, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden') };
+    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, unlocked: fresh, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden'), bonus };
     if (save.progress.won && n === levelNumber(3, 4)) {
+      stats.questWon(game.allPlayers().filter((p) => !isNet(p.source)));
+      persist();
       showStory(STORY.ending, () => setState('ending'));
       return;
     }
@@ -722,14 +727,14 @@ function shopBuy(p, c) {
 function updateGameOver() {
   if (stateT < 1.5) return;
   if (input.firstPressed('attack')) {
-    // Continue: everyone revives and the level restarts.
+    // Continue: everyone revives and the level restarts, without the points scored on it.
     for (const p of game.allPlayers()) {
-      p.alive = true; p.hp = p.def.hp; p.score = Math.floor(p.score / 2); p.keys = 0;
+      p.alive = true; p.hp = p.def.hp; p.score = p.stageStart ?? p.score; p.keys = 0;
     }
     game.startLevel(game.levelNum);
     setState('play');
   } else if (anyBack()) {
-    for (const p of game.allPlayers()) { p.alive = true; p.hp = p.def.hp; p.keys = 0; }
+    for (const p of game.allPlayers()) { p.alive = true; p.hp = p.def.hp; p.keys = 0; p.score = p.stageStart ?? p.score; }
     openHub(game.levelNum ? realmOf(game.levelNum) : null);
   }
 }
@@ -806,7 +811,16 @@ function render() {
       const lines = clearInfo.wasBoss
         ? [`The guardian of the ${clearInfo.realm} has fallen!`, '']
         : [`${clearInfo.name} complete`, clearInfo.newRunes ? 'You recovered a hidden Rune Stone!' : clearInfo.hidden ? 'A hidden Rune Stone lies somewhere in this level...' : '', ''];
-      for (const p of game.allPlayers()) lines.push(`${p.name}: level ${p.lvl} · ${p.gold} gold`);
+      const b = clearInfo.bonus;
+      if (b) {
+        const t = `${Math.floor(b.time / 60)}:${String(b.time % 60).padStart(2, '0')}`;
+        lines.push(`Cleared in ${t}${b.mul !== 1 ? ` · points x${+b.mul.toFixed(2)}${b.mul < stagePoints(clearInfo.level) ? ' (replay)' : ''}` : ''}`);
+      }
+      for (const p of game.allPlayers()) {
+        const r = b && b.rows.find((x) => x.slot === p.slot);
+        const extra = r ? ` · bonus +${fmtPts(r.clear + r.time + r.flawless)}${r.flawless ? ' (no deaths!)' : ''}` : '';
+        lines.push(`${p.name}: ${fmtPts(p.score)} pts${extra}`);
+      }
       lines.push('', `Rune Stones: ${runeCount(progress)} / ${TOTAL_RUNES}`);
       for (const c of clearInfo.unlocked || []) lines.push(`SECRET HERO UNLOCKED: ${c.toUpperCase()}!`);
       if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? `Press ${btn('attack')} to enter the Treasure Room!` : `Press ${btn('attack')} to return to the hub`);
