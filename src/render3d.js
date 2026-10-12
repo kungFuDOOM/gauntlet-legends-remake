@@ -684,7 +684,7 @@ export class Renderer3D {
       model.scale.setScalar(st.scale);
       root.add(model);
       if (!st.float) this.blob(root, st.proc === 'spider' ? 46 : 36);
-      return { kind: 'enemy', root, proc: model, style: st };
+      return { kind: 'enemy', root, creature: model, style: st };
     }
     const a = new Actor(st.model, { tint: st.tint, ghost: st.ghost, emissiveEyes: st.eyes });
     a.model.scale.setScalar((a.adult ? HERO_SCALE : S) * st.scale);
@@ -860,7 +860,7 @@ export class Renderer3D {
       if (seen.has(obj)) continue;
       this.views.delete(obj);
       // slain monsters collapse and sink instead of popping out of existence
-      if (v.proc && !obj.vanish && v.root.visible) {
+      if (v.creature && !obj.vanish && v.root.visible) {
         this.corpses.push({ ...v, t: 0 }); // beasts keel over
         if (this.corpses.length > 40) this.scene.remove(this.corpses.shift().root);
       } else if ((v.kind === 'enemy' || v.kind === 'boss') && v.actor && !obj.vanish && v.root.visible) {
@@ -872,7 +872,7 @@ export class Renderer3D {
     }
     this.corpses = this.corpses.filter((c) => {
       c.t += dt;
-      if (c.proc) c.proc.rotation.z = Math.min(Math.PI / 2, c.t * 6) * (c.root.id % 2 ? 1 : -1);
+      if (c.creature) c.creature.rotation.z = Math.min(Math.PI / 2, c.t * 6) * (c.root.id % 2 ? 1 : -1);
       else c.actor.update(dt);
       if (c.t > 1.3) c.root.position.y -= dt * 25;
       if (c.t > 2.4) { this.scene.remove(c.root); return false; }
@@ -977,17 +977,17 @@ export class Renderer3D {
     if (!visible) return;
     const [p] = g.nearestPlayer(e);
     // a charging beast faces where it's going, not the hero
-    const face = e.charging > 0 && v.proc ? Math.atan2(e.cvx || 0, e.cvy || 0) : p ? Math.atan2(p.x - e.x, p.y - e.y) : null;
+    const face = e.charging > 0 && v.creature ? Math.atan2(e.cvx || 0, e.cvy || 0) : p ? Math.atan2(p.x - e.x, p.y - e.y) : null;
     if (face !== null) v.root.rotation.y = lerpAngle(v.root.rotation.y, face, 0.18);
     const moved = v.px !== undefined ? Math.hypot(e.x - v.px, e.y - v.py) : 0;
     v.px = e.x; v.py = e.y;
     const moving = moved > 0.15;
-    if (v.proc) {
-      v.proc.userData.anim(g.time + e.phase, moving, e);
+    if (v.creature) {
+      v.creature.userData.anim(g.time + e.phase, moving, e);
       const hurt = e.hurt > 0;
       if (hurt || v.flashing) {
         v.flashing = hurt;
-        for (const m of v.proc.userData.mats) {
+        for (const m of v.creature.userData.mats) {
           if (hurt) { m.emissive.set('#ffffff'); m.emissiveIntensity = 0.8; } else { m.emissive.copy(m.userData.e0); m.emissiveIntensity = m.userData.ei0; }
         }
       }
