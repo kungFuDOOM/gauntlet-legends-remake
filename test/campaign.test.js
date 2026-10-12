@@ -106,3 +106,45 @@ test('monsters make up part of a party\'s level lead, never all of it', async ()
   }
   assert.ok(expectedLevel(16) > expectedLevel(9) && expectedLevel(9) > expectedLevel(2) && expectedLevel(1) === 1);
 });
+
+test('speed tops out a third above where a hero started, and the shop stops selling it', async () => {
+  globalThis.window = globalThis.window || globalThis; // the announcer looks for speech synthesis
+  const { Game } = await import('../src/game.js');
+  const { maxSpeed, CLASSES } = await import('../src/config.js');
+  const { SHOP, buy, maxed, priceOf } = await import('../src/campaign.js');
+  const g = new Game();
+  // a hero saved before the cap, comically fast, comes back at the cap
+  const p = g.addPlayer(0, 'kb', 'wizard', { lvl: 17, speed: 330, gold: 99999, upgrades: { speed: 12, junk: 5, magic: -1 } });
+  const cap = maxSpeed(CLASSES.wizard);
+  assert.equal(cap, Math.round(CLASSES.wizard.speed * 1.35));
+  assert.equal(p.speed, cap);
+  assert.deepEqual(p.upgrades, { speed: 12 });
+  const speed = SHOP.find((i) => i.id === 'speed');
+  assert.ok(maxed(p, speed));
+  const gold = p.gold;
+  assert.equal(buy(p, speed), false);
+  assert.equal(p.gold, gold, 'no gold spent on a maxed stat');
+  // levelling up doesn't push past it either
+  g.startLevel(1);
+  g.gainXp(p, 1e6);
+  assert.equal(p.speed, cap);
+  // upgrade counts (and so prices) are saved with the hero
+  const q = g.addPlayer(1, 'kb2', 'archer', { gold: 5000 });
+  const before = priceOf(q, speed);
+  buy(q, speed);
+  const again = g.addPlayer(1, 'kb2', 'archer', g.heroSave(q));
+  assert.ok(priceOf(again, speed) > before);
+});
+
+test('a Rune Stone pays its gold only the first time it is recovered', async () => {
+  globalThis.window = globalThis.window || globalThis;
+  const { Game } = await import('../src/game.js');
+  const g = new Game();
+  const p = g.addPlayer(0, 'kb', 'warrior');
+  g.startLevel(4);
+  g.pickup(p, { type: 'rune', sub: 'guardian', x: 0, y: 0 });
+  assert.equal(p.gold, 500);
+  g.runeKnown = (kind, n) => kind === 'guardian' && n === 4;
+  g.pickup(p, { type: 'rune', sub: 'guardian', x: 0, y: 0 });
+  assert.equal(p.gold, 500, 'a replay pays no rune gold');
+});

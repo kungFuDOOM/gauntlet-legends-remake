@@ -184,7 +184,7 @@ function cleanUiFields(ui) {
     shop: list(ui.shop, MAX_PLAYERS).map(cursor),
     ci: ci && {
       level: int(ci.level, 1, 16), wasBoss: !!ci.wasBoss, realm: str(ci.realm, 40), name: str(ci.name, 60), newRunes: int(ci.newRunes, 0, 16),
-      unlocked: list(ci.unlocked, 4).filter((c) => own(CLASSES, c)), hidden: !!ci.hidden,
+      unlocked: list(ci.unlocked, 4).filter((c) => own(CLASSES, c)), hidden: !!ci.hidden, treasure: !!ci.treasure,
       bonus: ci.bonus && typeof ci.bonus === 'object' ? {
         time: int(ci.bonus.time, 0, 1e6), mul: num(ci.bonus.mul, 0, 3),
         rows: list(ci.bonus.rows, MAX_PLAYERS).filter((r) => r && typeof r === 'object').map((r) => ({ slot: int(r.slot, 0, 3), clear: int(r.clear, 0, 1e5), time: int(r.time, 0, 1e5), flawless: int(r.flawless, 0, 1e5) })),

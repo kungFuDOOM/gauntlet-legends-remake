@@ -263,6 +263,7 @@ function CLASSES_NAME(cls) { return cls[0].toUpperCase() + cls.slice(1); }
 function startGame() {
   game = new Game();
   game.isCleared = (n) => !!save.progress.completed[n]; // replays score half
+  game.runeKnown = (kind, n) => !!save.progress.runes[`${kind === 'guardian' ? 'g' : 'h'}${n}`];
   // this device's heroes count toward its stats (not online guests', and not the training)
   game.onStat = (p, key, n, sub) => { if (!isNet(p.source) && game && game.level && !game.level.tutorial) stats.add(p, key, n, sub); };
   stats.gameStarted(!!net);
@@ -651,12 +652,14 @@ function updatePlay(dt) {
     const runesBefore = runeCount(save.progress);
     const unlockedBefore = unlockedClasses(save.progress);
     const bonus = game.stageBonus(info.isBoss);
+    // the treasure room is a reward for a guardian's first defeat only (no farming it)
+    const treasure = info.isBoss && realmOf(n) < 3 && !save.progress.completed[n];
     completeLevel(save.progress, n, game.runesFound);
     stats.levelCleared(game.allPlayers().filter((p) => !isNet(p.source)), info.isBoss);
     const fresh = unlockedClasses(save.progress).filter((c) => !unlockedBefore.includes(c));
     for (const c of fresh) say(`A secret hero joins the legend: the ${c}!`, `unlock${c}`, 0);
     persist();
-    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, unlocked: fresh, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden'), bonus };
+    clearInfo = { level: n, wasBoss: info.isBoss, realm: info.theme.name, name: info.stageName, newRunes: runeCount(save.progress) - runesBefore, unlocked: fresh, hidden: game.level.items.some((i) => i.type === 'rune' && i.sub === 'hidden'), bonus, treasure };
     if (save.progress.won && n === levelNumber(3, 4)) {
       stats.questWon(game.allPlayers().filter((p) => !isNet(p.source)));
       persist();
@@ -679,7 +682,7 @@ function updateLevelClear() {
       if (!p.alive) { p.alive = true; p.hp = Math.floor(p.def.hp / 2); }
     }
     // beating a guardian earns a treasure room before the shop
-    if (clearInfo.wasBoss && realmOf(clearInfo.level) < 3) {
+    if (clearInfo.treasure) {
       game.startTreasure(realmOf(clearInfo.level));
       setState('play');
       return;
@@ -823,7 +826,8 @@ function render() {
       }
       lines.push('', `Rune Stones: ${runeCount(progress)} / ${TOTAL_RUNES}`);
       for (const c of clearInfo.unlocked || []) lines.push(`SECRET HERO UNLOCKED: ${c.toUpperCase()}!`);
-      if (stateT > 1) lines.push(clearInfo.wasBoss && clearInfo.level < 16 ? `Press ${btn('attack')} to enter the Treasure Room!` : `Press ${btn('attack')} to return to the hub`);
+      if (clearInfo.wasBoss && !clearInfo.treasure && clearInfo.level < 16) lines.push('(The treasure room only opens the first time a guardian falls)');
+      if (stateT > 1) lines.push(clearInfo.treasure ? `Press ${btn('attack')} to enter the Treasure Room!` : `Press ${btn('attack')} to return to the hub`);
       drawOverlay(ctx, clearInfo.wasBoss ? 'GUARDIAN DEFEATED' : 'LEVEL COMPLETE', lines, '#8fe0ff');
     } else if (state === 'gameover') {
       const lines = game.allPlayers().map((p) => { const r = stats.rankOf(p); return `${p.name}: level ${p.lvl} · ${p.score} pts${r ? ` · #${r} on the leaderboard!` : ''}`; });

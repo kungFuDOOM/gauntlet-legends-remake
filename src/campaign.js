@@ -1,6 +1,8 @@
 // The quest: realm/stage unlocking, Rune Stones, the shop, saved heroes and the story text.
 // Pure data + functions (localStorage access is wrapped), so it can be unit tested.
 
+import { MAX_KEYS, MAX_POTIONS, MAX_ARMOR, maxSpeed } from './config.js';
+
 export const REALMS = 4;
 export const STAGES = 4; // three levels and a guardian per realm
 export const TOTAL_RUNES = REALMS * STAGES; // a hidden stone in every level + one per guardian
@@ -86,6 +88,17 @@ export const SHOP = [
   { id: 'done', name: 'Done', desc: 'Back to the hub', price: 0 },
 ];
 
+// Nothing more to gain from buying this (full up, or the stat is at its cap).
+export function maxed(p, item) {
+  switch (item.id) {
+    case 'potion': return p.potions >= MAX_POTIONS;
+    case 'key': return p.keys >= MAX_KEYS;
+    case 'armor': return p.armor >= MAX_ARMOR - 1e-9;
+    case 'speed': return p.speed >= maxSpeed(p.def);
+    default: return false;
+  }
+}
+
 // Stat upgrades get pricier each time you buy the same one.
 export function priceOf(p, item) {
   if (!item.stat) return item.price;
@@ -96,17 +109,15 @@ export function priceOf(p, item) {
 export function buy(p, item) {
   if (item.id === 'done') return false;
   const cost = priceOf(p, item);
-  if (p.gold < cost) return false;
-  if (item.id === 'potion' && p.potions >= 9) return false;
-  if (item.id === 'key' && p.keys >= 9) return false;
+  if (p.gold < cost || maxed(p, item)) return false;
   p.gold -= cost;
   switch (item.id) {
     case 'food': p.hp += 250; break;
     case 'potion': p.potions++; break;
     case 'key': p.keys++; break;
     case 'strength': p.strength += 4; p.shotDmg += 1.5; break;
-    case 'armor': p.armor = Math.min(0.65, p.armor + 0.04); break;
-    case 'speed': p.speed += 10; break;
+    case 'armor': p.armor = Math.min(MAX_ARMOR, p.armor + 0.04); break;
+    case 'speed': p.speed = Math.min(maxSpeed(p.def), p.speed + 10); break;
     case 'magic': p.magic += 0.25; break;
   }
   if (item.stat) { p.upgrades = p.upgrades || {}; p.upgrades[item.id] = (p.upgrades[item.id] || 0) + 1; }

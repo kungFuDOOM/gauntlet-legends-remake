@@ -159,6 +159,10 @@ export const POWERUP_ORDER = Object.keys(POWERUPS);
 export const TURBO_COST = 35;
 export const MAX_KEYS = 9;
 export const MAX_POTIONS = 9;
+export const MAX_ARMOR = 0.65;
+// The fastest a hero gets from levels and Speed upgrades: a third faster than they started
+// (and never past 210), so a high-level hero is quick without being uncontrollable.
+export function maxSpeed(def) { return Math.round(Math.min(def.speed * 1.35, 210)); }
 
 // Points. Everything a hero scores on a stage is worth more the deeper the stage (x1 on the
 // first, x2.5 on the last), and half on a stage the quest has already cleared, so pushing on

@@ -2,7 +2,7 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, maxSpeed, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
 import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable, enemyWeights } from './level.js';
 import { sfx, say } from './audio.js';
@@ -33,6 +33,7 @@ export class Game {
     this.levelSeq = 0;    // counts level loads, so guests notice even a restart of the same level
     this.onStat = null;   // (player, key, amount, detail): lifetime stats and records (see stats.js)
     this.isCleared = () => false; // (stage) has the quest cleared it before? Replays score less
+    this.runeKnown = () => false; // (kind, stage) was this Rune Stone recovered before?
     this.scoreMul = 1;    // what points are worth on this stage (see stagePoints)
   }
 
@@ -54,6 +55,12 @@ export class Game {
     if (saved) {
       for (const k of ['lvl', 'xp', 'strength', 'shotDmg', 'armor', 'speed', 'magic', 'gold', 'potions', 'score', 'kills']) if (typeof saved[k] === 'number' && Number.isFinite(saved[k])) p[k] = saved[k];
       p.savedRun = saved.run; // the quest's leaderboard entry, picked up by stats.js
+      p.speed = Math.min(p.speed, maxSpeed(def)); // (heroes saved before the cap)
+      // how many of each stat upgrade were bought: each costs more than the last
+      p.upgrades = {};
+      if (saved.upgrades && typeof saved.upgrades === 'object') {
+        for (const k of ['strength', 'armor', 'speed', 'magic']) if (Number.isInteger(saved.upgrades[k]) && saved.upgrades[k] > 0) p.upgrades[k] = Math.min(saved.upgrades[k], 99);
+      }
       p.maxHp = def.hp + (p.lvl - 1) * 40;
       p.hp = p.maxHp;
     }
@@ -64,7 +71,7 @@ export class Game {
   // The parts of a hero worth keeping between sessions.
   heroSave(p) {
     const { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions, score, kills } = p;
-    return { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions, score, kills };
+    return { lvl, xp, strength, shotDmg, armor, speed, magic, gold, potions, score, kills, upgrades: { ...p.upgrades } };
   }
 
   // Points for a hero, worth more on deeper stages and less on replays. Returns what was added.
@@ -582,7 +589,7 @@ export class Game {
       p.xp -= xpForLevel(p.lvl);
       p.lvl++;
       p.strength += 3; p.shotDmg += 1.2; p.armor = Math.min(0.6, p.armor + 0.015);
-      p.speed += 2; p.magic += 0.1; p.hp += 120;
+      p.speed = Math.min(maxSpeed(p.def), p.speed + 2); p.magic += 0.1; p.hp += 120;
       sfx.levelup();
       this.refreshDifficulty(); // monsters from here on match the party's new level
       this.text(p.x, p.y - 30, `LEVEL ${p.lvl}!`, '#ffe070', 2);
@@ -1169,8 +1176,10 @@ export class Game {
       case 'rune': {
         const guardian = it.sub !== 'hidden';
         this.addScore(p, guardian ? 5000 : 2500);
-        p.gold += guardian ? 500 : 300;
-        this.stat(p, 'gold', guardian ? 500 : 300);
+        if (!this.runeKnown(guardian ? 'guardian' : 'hidden', this.levelNum)) { // its gold only the first time
+          p.gold += guardian ? 500 : 300;
+          this.stat(p, 'gold', guardian ? 500 : 300);
+        }
         this.runesFound.push(guardian ? 'guardian' : 'hidden');
         sfx.powerup(); sfx.levelup();
         this.flash = 0.6;

@@ -3,7 +3,7 @@
 import { VIEW_W, VIEW_H, CLASSES, BASE_CLASSES as CLASS_ORDER, ENEMIES, POWERUPS, TURBO_COST, MAX_PLAYERS, TILE, xpForLevel } from './config.js';
 import { T } from './level.js';
 import { Input } from './input.js';
-import { SHOP, priceOf } from './campaign.js';
+import { SHOP, priceOf, maxed } from './campaign.js';
 
 const SERIF = 'Georgia, "Times New Roman", serif';
 const SANS = '"Trebuchet MS", Verdana, sans-serif';
@@ -890,8 +890,8 @@ export function drawShop(ctx, time, g, cursors) {
     SHOP.forEach((item, k) => {
       const r = shopRow(L, k);
       const here = c.idx === k && !c.done;
-      const cost = priceOf(p, item);
-      const afford = item.id === 'done' || p.gold >= cost;
+      const cost = priceOf(p, item), full = maxed(p, item);
+      const afford = item.id === 'done' || (p.gold >= cost && !full);
       ctx.fillStyle = here ? 'rgba(255,220,140,0.25)' : 'rgba(0,0,0,0.3)';
       roundRect(ctx, r.x, r.y, r.w, r.h, 5 * f);
       ctx.fill();
@@ -904,7 +904,7 @@ export function drawShop(ctx, time, g, cursors) {
       if (item.price) {
         ctx.textAlign = 'right';
         ctx.font = `bold ${12 * f}px ${SANS}`;
-        outlined(ctx, `${cost}g`, r.x + r.w - 8 * f, r.y + r.h * (L.wide ? 0.5 : 0.62), afford ? '#ffd860' : '#8a6a40', '#000', 3);
+        outlined(ctx, full ? 'MAX' : `${cost}g`, r.x + r.w - 8 * f, r.y + r.h * (L.wide ? 0.5 : 0.62), full ? '#9ad0ff' : afford ? '#ffd860' : '#8a6a40', '#000', 3);
       }
     });
     ctx.textAlign = 'center';
