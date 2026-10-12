@@ -124,6 +124,7 @@ function nextFreeClass(taken) {
 // ---------- quest save ----------
 
 let save = loadSave();
+if (stats.foldOldRuns(save.heroes)) writeSave(save); // once: the board from before runs were quests
 // Saves the quest and the heroes of the players on this machine (online guests' heroes are
 // theirs for the session only, so they never overwrite the host's saved heroes).
 function persist() {

@@ -49,6 +49,7 @@ export function loadStats() {
       }
     }
     if (Array.isArray(raw.runs)) s.runs = raw.runs.slice(0, TOP * 2).map(cleanRun).filter(Boolean);
+    s.folded = raw.folded === true;
     if (Array.isArray(raw.recent)) s.recent = raw.recent.slice(0, 4).filter((id) => typeof id === 'string').map((id) => id.slice(0, 24));
   } else {
     // the old high score list becomes the first leaderboard
@@ -119,6 +120,42 @@ export class Stats {
     if (run.score > 0) this.board(run);
     this.hero(p.cls).games++;
     this.dirty = true;
+  }
+
+  // Once: before runs were whole quests, every play session made its own entry, so one hero
+  // could fill the board. Fold those into one entry per hero (its best score, the most it
+  // reached, all its time), joined to the hero's quest if it has one, which then carries on
+  // from that score. heroes: the saved heroes by class; returns true if any were changed.
+  foldOldRuns(heroes) {
+    if (this.data.folded) return false;
+    this.data.folded = true;
+    this.dirty = true;
+    let changed = false;
+    const kept = [];
+    for (const cls of new Set(this.data.runs.map((r) => r.cls))) {
+      const runs = this.data.runs.filter((r) => r.cls === cls);
+      const h = heroes && heroes[cls];
+      const questId = h && h.run && typeof h.run.id === 'string' ? h.run.id : null;
+      const quest = runs.find((r) => r.id === questId);
+      const into = quest || (questId ? cleanRun({ ...h.run, cls }) : null) || runs.reduce((a, b) => (b.score > a.score || (b.score === a.score && b.date < a.date) ? b : a));
+      into.score = Math.max(into.score, ...runs.map((r) => r.score));
+      into.level = Math.max(into.level, ...runs.map((r) => r.level));
+      into.lvl = Math.max(into.lvl, ...runs.map((r) => r.lvl));
+      into.kills = Math.max(into.kills, ...runs.map((r) => r.kills));
+      into.time = runs.filter((r) => r !== into).reduce((t, r) => t + r.time, into.time);
+      into.players = Math.max(into.players, ...runs.map((r) => r.players));
+      kept.push(into);
+      if (questId && typeof h.score === 'number' && h.score < into.score) {
+        h.score = into.score; // the quest goes on from the folded score
+        h.run = { ...h.run, score: into.score, level: into.level, time: into.time };
+        changed = true;
+      }
+    }
+    this.data.runs = kept;
+    this.data.recent = this.data.recent.filter((id) => kept.some((r) => r.id === id));
+    sortRuns(this.data.runs);
+    this.save();
+    return changed;
   }
 
   // What a hero's save keeps of its run, so the quest's entry carries on next time.

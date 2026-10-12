@@ -234,3 +234,31 @@ test('a run is the whole quest: it carries on from the hero save, across session
   assert.equal(s.top.length, 2);
   assert.notEqual(s.top[1].id, saved.run.id);
 });
+
+test('the old one-entry-per-session board folds into one entry per hero, once', () => {
+  // a Wizard played over many sessions before runs were quests, now on a quest of its own
+  const run = (id, cls, score, level, date, time = 100) => ({ id, cls, score, level, lvl: 10, kills: 50, time, mode: 'solo', players: 1, date });
+  store.set('gl-remake-stats', JSON.stringify({ runs: [
+    run('a', 'wizard', 34640, 7, 1000), run('b', 'wizard', 22915, 12, 2000), run('old0', 'wizard', 22910, 3, 0),
+    run('c', 'archer', 900, 2, 1500), run('d', 'archer', 400, 1, 1600), run('q', 'wizard', 2002, 13, 3000, 50),
+  ], recent: ['q'] }));
+  const heroes = { wizard: { lvl: 17, score: 2002, run: { id: 'q', score: 2002, level: 13 } } };
+  const s = new Stats();
+  assert.equal(s.foldOldRuns(heroes), true);
+  assert.deepEqual(s.top.map((r) => [r.id, r.cls, r.score]), [['q', 'wizard', 34640], ['c', 'archer', 900]]);
+  assert.equal(s.top[0].level, 13);
+  assert.equal(s.top[0].time, 350, 'all its time played');
+  assert.equal(heroes.wizard.score, 34640, 'the quest carries on from the folded score');
+  assert.ok(s.isRecent(s.top[0]));
+  // it happens once: later runs are left alone
+  const t = new Stats();
+  assert.equal(t.data.folded, true);
+  assert.equal(t.foldOldRuns(heroes), false);
+  // and the Wizard's next session continues that entry
+  const g = new Game();
+  const p = g.addPlayer(0, 'kb', 'wizard', heroes.wizard);
+  p.score += 500;
+  t.tick(1, [p], 13, solo);
+  assert.equal(t.top.length, 2);
+  assert.equal(t.top[0].score, 35140);
+});
