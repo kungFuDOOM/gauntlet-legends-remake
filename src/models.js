@@ -482,6 +482,13 @@ export function buildProjectile(kind) {
       part(spin, G.cyl(1.2, 1.2, 4, 5), m('#d8d0c0'), 0, 5, 0, false);
       glow = '#60ff30'; size = 30;
       break;
+    case 'meteor': // a falling ball of fire
+      part(spin, G.ico(9), m('#ffb040', { emissive: '#ff6010', emissiveIntensity: 3 }), 0, 0, 0, false);
+      part(spin, G.ico(6), m('#5a2a10'), 4, 3, 2, false);
+      glow = '#ff6a10'; size = 90;
+      break;
+    case 'quake': // nothing to see until it lands: the marker on the ground is the warning
+      break;
     case 'gbolt':
       part(spin, G.oct(4), m('#a0ff80', { emissive: '#40ff40', emissiveIntensity: 3 }), 0, 0, 0, false);
       glow = '#40ff60'; size = 38;

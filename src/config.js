@@ -131,7 +131,9 @@ export const ENEMIES = {
   death:    { name: 'Death',         hp: 1,  speed: 74,  dmg: 25, r: 13, xp: 60, score: 1000, ai: 'death',  color: '#1a1a22', immune: true },
 };
 
-export const LOBBED = new Set(['lob', 'bomb', 'flask']); // enemy projectiles thrown in an arc
+export const LOBBED = new Set(['lob', 'bomb', 'flask', 'meteor', 'quake']); // enemy attacks that land on a marked spot
+// how far each of those (and a poison pool) reaches when it lands
+export const BLAST = { lob: 28, bomb: 40, flask: 30, meteor: 46, quake: 60, pool: 36 };
 
 export const GENERATOR_HP = 45; // three tiers of 15
 export const MAX_ENEMIES = 110;

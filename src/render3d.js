@@ -3,7 +3,7 @@
 // on the ground plane (sim x -> world X, sim y -> world Z), as in the arcade original.
 
 import * as THREE from 'three';
-import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS, LOBBED, ENEMIES } from './config.js';
+import { TILE, VIEW_W, VIEW_H, WORLD_VIEW_W, WORLD_VIEW_H, POWERUPS, LOBBED, BLAST, ENEMIES } from './config.js';
 import { T } from './level.js';
 import { assets, Actor, cloneProp, MODEL_SCALE, HERO_SCALE } from './assets.js';
 import { buildCreature } from './monsters.js';
@@ -825,6 +825,16 @@ export class Renderer3D {
       root.add(spin);
       return { kind: 'proj', root, spin };
     }
+    if (pr.kind === 'pool') { // a bubbling pool of poison on the ground
+      const root = new THREE.Group();
+      const mat = new THREE.MeshBasicMaterial({ color: '#60e030', transparent: true, opacity: 0, depthWrite: false });
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(BLAST.pool, 24).rotateX(-Math.PI / 2), mat);
+      disc.position.y = 1.4;
+      const glow = glowSprite('#80ff40', BLAST.pool * 2.6, 0.35);
+      glow.position.y = 6;
+      root.add(disc, glow);
+      return { kind: 'proj', root, spin: null, pool: { mat, glow } };
+    }
     const root = buildProjectile(pr.kind);
     return { kind: 'proj', root, spin: root.userData.spin };
   }
@@ -869,6 +879,7 @@ export class Renderer3D {
         this.corpses.push({ ...v, t: 0 });
         if (this.corpses.length > 40) this.scene.remove(this.corpses.shift().root); // bounded, whatever happens
       } else this.scene.remove(v.root);
+      if (v.ward) this.scene.remove(v.ward, ...v.stars);
     }
     this.corpses = this.corpses.filter((c) => {
       c.t += dt;
@@ -886,7 +897,7 @@ export class Renderer3D {
       let mk = this.markers.get(pr);
       if (!mk) { mk = buildMarker(); this.markers.set(pr, mk); this.scene.add(mk); }
       mk.position.set(pr.tx, 1.5, pr.ty);
-      mk.scale.setScalar(0.4 + 0.6 * (pr.t / pr.T));
+      mk.scale.setScalar((0.4 + 0.6 * (pr.t / pr.T)) * (BLAST[pr.kind] || 28) / 24); // as wide as what lands there
     }
     for (const [pr, mk] of this.markers) if (!seenM.has(pr)) { this.scene.remove(mk); this.markers.delete(pr); }
 
@@ -1008,7 +1019,13 @@ export class Renderer3D {
 
   updateBoss(v, e, g, dt) {
     const t = g.time;
-    v.root.position.set(e.x, 0, e.y);
+    const act = e.act, since = act ? t - act.t : 99;
+    // leaping guardians rise and fall; teleporting ones vanish for a moment
+    const air = act && act.type === 'leap' && since < 1.1 ? Math.sin((since / 1.1) * Math.PI) * 150 : 0;
+    v.root.position.set(e.x, air, e.y);
+    v.root.visible = !(act && act.type === 'teleport' && since < 0.85);
+    v.root.scale.setScalar(act && act.type === 'roar' && since < 1.6 ? 1 + Math.sin(since * 18) * 0.04 : 1);
+    this.bossExtras(v, e, t);
     const [p] = g.nearestPlayer(e);
     if (e.charging > 0) v.root.rotation.y = Math.atan2(e.cvx, e.cvy);
     else if (p) v.root.rotation.y = lerpAngle(v.root.rotation.y, Math.atan2(p.x - e.x, p.y - e.y), 0.08);
@@ -1021,9 +1038,12 @@ export class Renderer3D {
       a.base(e.charging > 0 ? 'Running_A' : moving ? 'Walking_A' : 'Idle', e.charging > 0 ? 1.6 : 1);
       if (e.act && e.act !== v.lastAct) {
         v.lastAct = e.act;
-        a.play(e.act.type === 'cast' ? 'Spellcast_Long' : '2H_Melee_Attack_Chop', { upper: moving, timeScale: 1.6 });
+        const clip = { cast: 'Spellcast_Shoot', windup: 'Spellcast_Raise', breath: 'Spellcast_Long', roar: 'Cheer', teleport: 'Spellcast_Raise' }[e.act.type] || '2H_Melee_Attack_Chop';
+        a.play(clip, { upper: moving, timeScale: 1.6 });
       }
-      a.flash(e.hurt, hurtColor);
+      const winding = act && (act.type === 'windup' || act.type === 'roar') && since < 0.8;
+      if (winding) a.flash(0.5 + Math.sin(t * 30) * 0.5, '#ff8020'); // the tell: it glows before it strikes
+      else a.flash(e.hurt, hurtColor);
       a.update(dt);
       return;
     }
@@ -1032,14 +1052,35 @@ export class Renderer3D {
     if (rig.legs) rig.legs.forEach((l, i) => (l.rotation.x = moving ? Math.sin(t * 8 + i * Math.PI / 2) * 0.5 : Math.sin(t * 2 + i) * 0.1));
     rig.heads.forEach((h, i) => {
       h.rotation.y = Math.sin(t * 1.5 + i * 2) * 0.3;
-      if (h.userData.jaw) h.userData.jaw.rotation.x = e.cd2 < 0.4 ? 0.6 : Math.max(0, Math.sin(t * 3)) * 0.15;
+      const open = act && ['windup', 'breath', 'roar'].includes(act.type) && since < (act.type === 'breath' ? 1.7 : 0.9);
+      if (h.userData.jaw) h.userData.jaw.rotation.x = open ? 0.65 : Math.max(0, Math.sin(t * 3)) * 0.15;
     });
     if (rig.tail) rig.tail.rotation.y = Math.sin(t * 2) * 0.4;
     rig.rig.rotation.x = e.charging > 0 ? 0.25 : 0;
-    const on = e.hurt > 0;
+    const winding = act && (act.type === 'windup' || act.type === 'roar') && since < 0.8;
+    const on = e.hurt > 0 || winding;
     for (const m of v.root.userData.mats) {
-      if (on) { m.emissive.set(hurtColor); m.emissiveIntensity = 0.8; } else { m.emissive.copy(m.userData.e0); m.emissiveIntensity = m.userData.ei0; }
+      if (winding) { m.emissive.set('#ff7010'); m.emissiveIntensity = 0.5 + Math.sin(t * 30) * 0.4; } // the tell
+      else if (on) { m.emissive.set(hurtColor); m.emissiveIntensity = 0.8; } else { m.emissive.copy(m.userData.e0); m.emissiveIntensity = m.userData.ei0; }
     }
+  }
+
+  // A shimmering ward while a guardian is shrugging off magic; circling stars while stunned.
+  bossExtras(v, e, t) {
+    if (!v.ward) {
+      v.ward = new THREE.Mesh(new THREE.SphereGeometry(62, 20, 14), new THREE.MeshBasicMaterial({ color: '#b080ff', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+      v.ward.position.y = 40;
+      v.stars = [0, 1, 2].map(() => glowSprite('#ffe060', 26, 0.95));
+      v.root.parent.add(v.ward, ...v.stars);
+    }
+    const warded = e.ward > 0;
+    v.ward.visible = warded && v.root.visible;
+    if (warded) { v.ward.position.set(e.x, 40 + v.root.position.y, e.y); v.ward.material.opacity = 0.12 + Math.sin(t * 5) * 0.06; v.ward.rotation.y = t; }
+    v.stars.forEach((s, i) => {
+      s.visible = e.stun > 0;
+      const a = t * 5 + (i * Math.PI * 2) / 3;
+      s.position.set(e.x + Math.cos(a) * 34, 96, e.y + Math.sin(a) * 34);
+    });
   }
 
   updateGen(v, gen, t) {
@@ -1063,6 +1104,14 @@ export class Renderer3D {
   }
 
   updateProj(v, pr, t) {
+    if (v.pool) {
+      v.root.position.set(pr.x, 0, pr.y);
+      const k = pr.T ? pr.t / pr.T : 0;
+      const a = Math.min(1, k * 8) * Math.min(1, (1 - k) * 5);
+      v.pool.mat.opacity = 0.55 * a;
+      v.pool.glow.material.opacity = (0.25 + Math.sin(t * 6 + pr.x) * 0.08) * a;
+      return;
+    }
     if (LOBBED.has(pr.kind)) {
       v.root.position.set(pr.x, 14 + pr.z, pr.y);
       v.spin.rotation.set(t * 8, t * 6, 0);

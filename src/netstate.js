@@ -46,6 +46,7 @@ export class SnapshotWriter {
       E: g.enemies.map((e) => [
         this.id(e), e.type, r1(e.x), r1(e.y), Math.round(e.hp), e.maxHp, r2(e.hurt), e.invisible ? 1 : 0, act(e.act),
         r2(e.charging || 0), r2(e.cvx || 0), r2(e.cvy || 0), r2(e.cd2 || 0), e.fromGen ? 1 : 0, e.vanish ? 1 : 0,
+        r2(e.ward || 0), r2(e.stun || 0), e.bphase || 0,
       ]),
       G: g.gens.map((s) => [this.id(s), s.type, r1(s.x), r1(s.y), Math.round(s.hp), r2(s.hurt)]),
       I: g.items.map((it) => [this.id(it), it.type, it.sub ?? 0, r1(it.x), r1(it.y)]),
@@ -70,8 +71,8 @@ const list = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
 const color = (v) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v) ? v : '#ffffff');
 const LEVEL_KEY = /^(H|U|T[0-2]|L([1-9]|1[0-6]))$/;
 const ITEM_TYPES = new Set(['food', 'poison', 'gold', 'gem', 'chest', 'barrel', 'key', 'potion', 'amulet', 'rune']);
-const PROJ_KINDS = new Set(['axe', 'sword', 'arrow', 'fireball', 'efire', 'dagger', 'spark', 'bolt', 'lob', 'bomb', 'flask', 'gbolt', 'hbolt']);
-const ACT_TYPES = new Set(['melee', 'shoot', 'turbo', 'throw', 'cast']);
+const PROJ_KINDS = new Set(['axe', 'sword', 'arrow', 'fireball', 'efire', 'dagger', 'spark', 'bolt', 'lob', 'bomb', 'flask', 'gbolt', 'hbolt', 'meteor', 'quake', 'pool']);
+const ACT_TYPES = new Set(['melee', 'shoot', 'turbo', 'throw', 'cast', 'windup', 'breath', 'leap', 'teleport', 'roar']);
 const STATES = new Set(['title', 'confirm', 'story', 'select', 'realm', 'shop', 'ending', 'play', 'paused', 'levelclear', 'gameover']);
 const POS = 20000; // generous bound for positions in pixels
 const cleanAct = (a) => (Array.isArray(a) && ACT_TYPES.has(a[0]) ? [a[0], num(a[1], -1e6, 1e6)] : 0);
@@ -104,6 +105,7 @@ export function cleanGame(s) {
     E: list(s.E, 150).filter((r) => Array.isArray(r) && (r[1] === 'boss' || own(ENEMIES, r[1]))).map((r) => [
       int(r[0], 1, 1e9), r[1], num(r[2], -POS, POS), num(r[3], -POS, POS), num(r[4], -1e6, 1e6), num(r[5], 1, 1e6), num(r[6], 0, 5),
       r[7] ? 1 : 0, cleanAct(r[8]), num(r[9], 0, 60), num(r[10], -2, 2), num(r[11], -2, 2), num(r[12], -60, 60), r[13] ? 1 : 0, r[14] ? 1 : 0,
+      num(r[15], 0, 30), num(r[16], 0, 10), int(r[17], 0, 3),
     ]),
     G: list(s.G, 40).filter((r) => Array.isArray(r) && own(ENEMIES, r[1])).map((r) => [int(r[0], 1, 1e9), r[1], num(r[2], -POS, POS), num(r[3], -POS, POS), num(r[4], 0, 1e4), num(r[5], 0, 5)]),
     I: list(s.I, 400).filter((r) => Array.isArray(r) && ITEM_TYPES.has(r[1]) && (r[1] !== 'amulet' || own(POWERUPS, r[2]))).map((r) => [
@@ -305,6 +307,7 @@ export class SnapshotReader {
       if (a && (!e.act || e.act.t !== a[1])) e.act = { type: a[0], t: a[1] };
       [e.charging, e.cvx, e.cvy, e.cd2] = row.slice(9, 13);
       e.vanish = !!row[14];
+      [e.ward, e.stun, e.bphase] = row.slice(15, 18);
     });
     g.boss = g.enemies.find((e) => e.type === 'boss') || null;
     g.gens = sync('G', s.G, (row) => ({ type: row[1], r: 14 }), (o, row) => { glide(o, row[2], row[3]); o.hp = row[4]; o.hurt = row[5]; });

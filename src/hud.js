@@ -264,6 +264,15 @@ function drawBossBar(ctx, g) {
   hg.addColorStop(0, '#ff7040'); hg.addColorStop(1, '#a01808');
   ctx.fillStyle = hg;
   ctx.fillRect(x, y + 8, w * Math.max(0, e.hp / e.maxHp), 9);
+  // the guardian gets nastier at two thirds and one third of its health
+  ctx.fillStyle = '#ffe0b0';
+  for (const k of [0.33, 0.66]) ctx.fillRect(x + w * k - 1, y + 6, 2, 13);
+  ctx.font = `bold 11px ${SANS}`;
+  const tags = [];
+  if (e.stun > 0) tags.push(['STUNNED: HIT IT!', '#ffe060']);
+  if (e.ward > 0) tags.push(['MAGIC WARDED', '#c9a0ff']);
+  if ((e.bphase || 1) === 3) tags.push(['FURIOUS', '#ff6040']);
+  tags.forEach(([text, color], i) => { ctx.textAlign = 'center'; outlined(ctx, text, VIEW_W / 2 + (i - (tags.length - 1) / 2) * 130, y + 34, color, '#000', 3); });
 }
 
 // The current lesson in the Training Grounds, in a box at the top of the screen.

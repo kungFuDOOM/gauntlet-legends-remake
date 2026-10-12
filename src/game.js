@@ -2,10 +2,11 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, LOBBED, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, TURBO_COST, MAX_KEYS, MAX_POTIONS, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
 import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable, enemyWeights } from './level.js';
 import { sfx, say } from './audio.js';
+import { initBoss, updateBoss as bossBrain, bossDamage, BOSS_HP_MAGIC_CAP, BOSS_WARD } from './bosses.js';
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -218,10 +219,12 @@ export class Game {
     if (!this.diff) this.refreshDifficulty();
     const hp = Math.round(b.hp * (1 + 0.35 * (this.livePlayers().length - 1)) * this.diff.lead);
     const e = {
-      kind: 'enemy', type: 'boss', def: { ...b, ai: 'boss', dmg: 25, r: 30, xp: 400, score: 5000 },
-      x, y, r: 30, hp, maxHp: hp, speed: b.speed, dmgMul: this.diff ? this.diff.dmg : 1, cd: 2, cd2: 6, cd3: 3, hurt: 0, phase: 0, walk: 0,
-      charging: 0, cvx: 0, cvy: 0,
+      kind: 'enemy', type: 'boss', def: { ...b, ai: 'boss', dmg: 16, r: 30, xp: 400, score: 5000 },
+      x, y, r: 30, hp, maxHp: hp, speed: b.speed, dmgMul: 1 + (this.diff.dmg - 1) * 0.5, // its moves are authored per guardian: only half the realm's extra bite
+      cd: 2, cd2: 6, cd3: 3, hurt: 0, phase: 0, walk: 0,
+      charging: 0, cvx: 0, cvy: 0, baseSpeed: b.speed,
     };
+    initBoss(e, b.model);
     this.enemies.push(e);
     this.boss = e;
   }
@@ -719,7 +722,15 @@ export class Game {
     for (const e of this.enemies) {
       if (!this.onScreen(e, 20)) continue;
       if (e.type === 'death') { e.hp = 0; this.onEnemyKilled(e, p); continue; }
-      this.damageEnemy(e, e.type === 'boss' ? dmg * 1.5 : dmg, p, false);
+      if (e.type === 'boss') {
+        // guardians resist magic: a slice of their health at most, then a ward against more
+        if (e.ward > 0 || e.air || e.roar > 0) { this.text(e.x, e.y - 50, 'RESISTED', '#c9a0ff', 1); continue; }
+        this.damageEnemy(e, Math.min(dmg * 1.5, e.maxHp * BOSS_HP_MAGIC_CAP), p, false);
+        e.ward = BOSS_WARD;
+        this.text(e.x, e.y - 70, 'WARDED AGAINST MAGIC', '#c9a0ff', 1.6);
+        continue;
+      }
+      this.damageEnemy(e, dmg, p, false);
     }
     for (const g of this.gens) if (this.onScreen(g, 20)) this.damageGen(g, 16 * p.magic * power, p);
     if (!fromShot) this.text(p.x, p.y - 26, 'MAGIC!', '#c9a0ff', 1.2);
@@ -730,6 +741,7 @@ export class Game {
   damageEnemy(e, amount, p, melee) {
     if (e.hp <= 0) return;
     if (e.def.immune) { if (melee) this.text(e.x, e.y - 16, 'IMMUNE', '#999', 0.6); return; }
+    if (e.type === 'boss') { amount = bossDamage(this, e, amount); if (!amount) return; }
     amount = Math.round(amount);
     e.hp -= amount;
     e.hurt = 0.12;
@@ -951,43 +963,7 @@ export class Game {
   }
 
   updateBoss(e, p, d, dt, contact) {
-    e.cd2 -= dt; e.cd3 -= dt;
-    const enraged = e.hp < e.maxHp * 0.4;
-    if (e.charging > 0) {
-      e.charging -= dt;
-      const blocked = this.move(e, e.cvx * dt, e.cvy * dt);
-      if (blocked) { e.charging = 0; this.shake = 8; sfx.explode(); }
-      for (const q of this.livePlayers()) if (dist(q, e) < e.r + q.r) this.hurtPlayer(q, 40, e);
-      return;
-    }
-    if (contact && e.cd <= 0) { e.cd = 0.9; e.act = { type: 'melee', t: this.time }; this.hurtPlayer(p, e.def.dmg, e); }
-    else if (!contact) this.steer(e, p, d, dt);
-    // Radial fire burst
-    if (e.cd2 <= 0) {
-      e.cd2 = enraged ? 2.2 : 3.4;
-      e.act = { type: 'cast', t: this.time };
-      const n = enraged ? 20 : 14;
-      const off = Math.random();
-      for (let i = 0; i < n; i++) this.enemyShot(e, ((i + off) / n) * Math.PI * 2, 'efire', 18, 200);
-    }
-    // Charge or summon
-    if (e.cd3 <= 0) {
-      e.cd3 = enraged ? 3.5 : 5;
-      if (Math.random() < 0.55 && this.lineOfSight(e, p)) {
-        const a = Math.atan2(p.y - e.y, p.x - e.x);
-        e.charging = 0.8; e.cvx = Math.cos(a) * 380; e.cvy = Math.sin(a) * 380;
-        this.text(e.x, e.y - 40, 'CHARGE!', '#ff8060', 1);
-      } else {
-        const kinds = enemyWeights(this.levelNum).map(([k]) => k); // the realm's own monsters
-        for (let i = 0; i < 3; i++) {
-          const a = Math.random() * Math.PI * 2;
-          const x = e.x + Math.cos(a) * 50, y = e.y + Math.sin(a) * 50;
-          const kind = kinds[Math.floor(Math.random() * kinds.length)];
-          if (!this.collides(x, y, 12)) this.spawnEnemy(kind, x, y).fromGen = true;
-        }
-        this.burst(e.x, e.y, '#a080ff', 20, 160);
-      }
-    }
+    bossBrain(this, e, p, d, dt, contact);
   }
 
   separateEnemies() {
@@ -1020,19 +996,27 @@ export class Game {
   // ---------- projectiles ----------
 
   updateProjectile(pr, dt) {
+    if (pr.kind === 'pool') { // a lingering pool of poison
+      pr.t += dt; pr.tick -= dt;
+      if (pr.tick <= 0) { pr.tick = 0.5; for (const p of this.livePlayers()) if (dist(p, pr) < BLAST.pool && !p.buffs.levitate) this.hurtPlayer(p, pr.dmg, null); }
+      if (pr.t >= pr.T) pr.dead = true;
+      return;
+    }
     if (LOBBED.has(pr.kind)) {
       pr.t += dt;
       const k = Math.min(1, pr.t / pr.T);
       pr.x = pr.sx + (pr.tx - pr.sx) * k;
       pr.y = pr.sy + (pr.ty - pr.sy) * k;
-      pr.z = Math.sin(k * Math.PI) * 60;
+      pr.z = pr.kind === 'meteor' ? 420 * (1 - k) : pr.kind === 'quake' ? 0 : Math.sin(k * Math.PI) * 60;
       if (k >= 1) {
         pr.dead = true;
-        // bombs blow up wider, flasks splash poison
-        const big = pr.kind === 'bomb';
-        if (big) { this.burst(pr.x, pr.y, '#ffb040', 22, 170); this.burst(pr.x, pr.y, '#5a4a3a', 10, 90); sfx.explode(); }
-        else this.burst(pr.x, pr.y, pr.kind === 'flask' ? '#90ff40' : '#8a7a5a', pr.kind === 'flask' ? 18 : 10, 100);
-        for (const p of this.livePlayers()) if (dist(p, pr) < (big ? 40 : 28)) this.hurtPlayer(p, pr.dmg, null);
+        // bombs and meteors blow up wide, flasks splash poison, shockwaves throw up dust
+        const kind = pr.kind;
+        if (kind === 'bomb' || kind === 'meteor') { this.burst(pr.x, pr.y, '#ffb040', 22, 170); this.burst(pr.x, pr.y, '#5a4a3a', 10, 90); sfx.explode(); }
+        else if (kind === 'quake') { this.burst(pr.x, pr.y, '#c8a878', 20, 160); this.shake = Math.max(this.shake, 5); }
+        else this.burst(pr.x, pr.y, kind === 'flask' ? '#90ff40' : '#8a7a5a', kind === 'flask' ? 18 : 10, 100);
+        for (const p of this.livePlayers()) if (dist(p, pr) < BLAST[kind]) this.hurtPlayer(p, pr.dmg, null);
+        if (kind === 'flask' && pr.poolDmg) this.projs.push({ owner: 'enemy', kind: 'pool', x: pr.x, y: pr.y, vx: 0, vy: 0, t: 0, T: 6, tick: 0.3, dmg: pr.poolDmg, r: BLAST.pool, z: 0, life: 6 });
       }
       return;
     }

@@ -116,10 +116,10 @@ const REALM_LOOKS = [
 ];
 
 export const BOSSES = [
-  { name: 'The Dragon',       model: 'dragon',  color: '#b8321e', horn: '#e8d8b0', hp: 520,  speed: 70 },
-  { name: 'The Chimera',      model: 'chimera', color: '#9a7a3a', horn: '#3a2a1a', hp: 700,  speed: 82 },
-  { name: 'The Plague Fiend', model: 'fiend',   color: '#5a8a3a', horn: '#d0e0a0', hp: 880,  speed: 88 },
-  { name: 'Skorne',           model: 'skorne',  color: '#4a2a5a', horn: '#d8c8a0', hp: 1150, speed: 92 },
+  { name: 'The Dragon',       model: 'dragon',  color: '#b8321e', horn: '#e8d8b0', hp: 2600, speed: 70 },
+  { name: 'The Chimera',      model: 'chimera', color: '#9a7a3a', horn: '#3a2a1a', hp: 3700, speed: 82 },
+  { name: 'The Plague Fiend', model: 'fiend',   color: '#5a8a3a', horn: '#d0e0a0', hp: 4000, speed: 80 },
+  { name: 'Skorne',           model: 'skorne',  color: '#4a2a5a', horn: '#d8c8a0', hp: 5200, speed: 92 },
 ];
 
 export const LEVELS_PER_REALM = 4;
@@ -1030,11 +1030,9 @@ function generateBossLevel(n, seed, info) {
     { type: 'gold', x: 18, y: 10 }, { type: 'gold', x: 18, y: 21 }, { type: 'gem', x: 35, y: 15 },
   ];
   if (R() < 0.7) items.push({ type: 'amulet', x: 6, y: 16, sub: POWERUP_ORDER[Math.floor(R() * POWERUP_ORDER.length)] });
-  // the realm's foot soldiers and its flyers
-  const [melee, flyer] = ROSTERS[Math.min(3, info.realm)][0].map(([k]) => k);
-  const generators = [{ type: melee, x: 19, y: 9 }, { type: melee, x: 19, y: 22 }];
-  if (info.realm >= 1) generators.push({ type: flyer, x: 35, y: 21 }, { type: flyer, x: 35, y: 10 });
-  for (const it of [...items, ...generators]) tiles[it.y * w + it.x] = T.FLOOR;
+  // no generators: the guardian calls its own thralls (see bosses.js)
+  const generators = [];
+  for (const it of items) tiles[it.y * w + it.x] = T.FLOOR;
   const rooms = [{ cx: 6, cy: 15, size: 50 }, { cx: 27, cy: 15, size: 480 }];
   return { n, w, h, tiles, ground, rooms, start: { x: 6, y: 15 }, exit, items, generators, enemies: [], boss: { x: 30, y: 15 }, info, doorSegs: 0 };
 }

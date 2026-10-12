@@ -110,7 +110,16 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
   - **Sky Dominion:** stone islands floating above drifting clouds, linked by narrow bridges
   - **Underworld:** scorched caverns riddled with lava
 
-  Each realm has 3 procedurally generated levels with the original's stage names (Valley of Fire, Castle Courtyard, ...), then a **boss fight** against the Dragon, the Chimera, the Plague Fiend or Skorne. Bosses breathe fire in every direction, charge and summon minions; defeating one earns a Rune Stone.
+  Each realm has 3 procedurally generated levels with the original's stage names (Valley of Fire, Castle Courtyard, ...), then a **boss fight** against the Dragon, the Chimera, the Plague Fiend or Skorne; defeating one earns a Rune Stone.
+- **Boss fights** are about reading and dodging, not soaking hits. Each guardian has its own moves, and every one is telegraphed: the guardian glows and rears back before it attacks, and anything that lands on the ground (a leap, a meteor, a stomp, a teleport strike, a flask of poison) marks its spot with a red circle first.
+  - **The Dragon** sweeps fire breath, fires fans of fireballs, leaps onto you and calls down meteors.
+  - **The Chimera** breathes fire, poison and lightning from three heads, charges across the arena and stomps out rings of shockwaves.
+  - **The Plague Fiend** lobs flasks that leave poison pools, sprays bile, bursts into rings of poison and calls swarms.
+  - **Skorne** fires rings of hellfire, rains meteors and vanishes to strike where you stood.
+  - **Three phases:** at two thirds and one third of its health a guardian roars (it can't be hurt while it does), calls thralls, grows faster and adds nastier moves. Food tumbles into the arena each time. The phase marks are on its health bar.
+  - **Stun windows:** a guardian that lands a leap, teleports in or charges into a wall is dazed for a moment and takes 50% more damage. Its health bar says "STUNNED: HIT IT!"
+  - **No potion spam:** a magic potion takes at most 6% of a guardian's health, then the guardian is warded against magic for 8 seconds (a purple bubble; further potions are resisted). Guardians can't be hurt while airborne or vanished.
+  - The thralls a guardian calls are weaker than its realm's monsters and only a few are out at once. Lairs have no generators.
 - **Lava** burns heroes who wade through it (monsters won't go near it), **spike traps** stab anyone standing on them when they spring up, **gates** block the trail until you find a key, and **treasure vaults** behind locked gates hold chests, gems and potions.
 - **Pixel-art rendering:** the 3D view is drawn at a low resolution and scaled up with hard pixel edges for a retro look (press `X` to change it).
 - **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
@@ -128,6 +137,7 @@ server.js         zero-dependency static server (npm start)
 src/main.js       game loop and state machine (title, hero select, play, pause, level clear, game over)
 src/game.js       simulation: players, enemies and their AI, generators, projectiles, pickups, traps
 src/campaign.js   the quest: realm unlocking, Rune Stones, shop, saved heroes, story text
+src/bosses.js     the guardians' fights: per-boss telegraphed moves, phases, stuns, the magic ward
 src/level.js      procedural dungeon and boss arena generation (pure, testable)
 src/render3d.js   three.js renderer: builds level geometry from the tile map, lighting and shadows,
                   camera, and keeps a 3D model in sync with every entity
@@ -171,8 +181,8 @@ npm test
 
 ## Ideas for next steps
 
-- More enemy types and per-realm enemy variety; teleporters
-- Unique layouts for each boss and multiple attack phases
+- Teleporters
+- A unique arena layout for each boss
 - Stat allocation on level-up
 - A worldwide leaderboard (needs a small server or hosted database to collect scores, plus checks against faked scores)
 - Online play: guests' own saved heroes, smoother movement for guests (predicting their own hero locally), reconnecting after a dropped connection, and a dedicated server so the host leaving doesn't end the game
