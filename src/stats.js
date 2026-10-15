@@ -1,0 +1,272 @@
+// Lifetime stats and the leaderboard, kept in this browser.
+//
+// Stats cover the heroes played on this device (an online guest's own hero included); the
+// leaderboard keeps the 10 best runs. A run is one saved hero's whole quest: its score is
+// saved with the hero, so coming back to the quest carries on the same entry (the hero save
+// holds the run's id, see runInfo), until a new quest is started. An online guest's hero is
+// fresh each session, so its run is that session. Everything is saved every few seconds and when the page is hidden, so a closed
+// tab loses at most a moment of play.
+
+import { CLASSES } from './config.js';
+
+const KEY = 'gl-remake-stats';
+const OLD_SCORES = 'gl-remake-hiscores';
+const TOP = 10;
+const COUNTERS = ['kills', 'gens', 'deaths', 'gold', 'food', 'potions', 'turbo', 'keys'];
+
+function blank() {
+  const s = { v: 1, time: 0, games: 0, online: 0, levels: 0, bosses: 0, treasure: 0, byEnemy: {}, heroes: {}, runs: [], recent: [] };
+  for (const k of COUNTERS) s[k] = 0;
+  return s;
+}
+
+function blankHero() {
+  const h = { time: 0, levels: 0, best: 0, games: 0 };
+  for (const k of COUNTERS) h[k] = 0;
+  return h;
+}
+
+const count = (v, max = 1e12) => (typeof v === 'number' && v >= 0 && Number.isFinite(v) ? Math.min(v, max) : 0);
+const label = (v, max = 40) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+// Reads whatever is stored, keeping only well-formed values (it's this browser's own data,
+// but a damaged or hand-edited save shouldn't break the screen).
+export function loadStats() {
+  const s = blank();
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(KEY)); } catch { /* storage unavailable or damaged */ }
+  if (raw && typeof raw === 'object') {
+    for (const k of ['time', 'games', 'online', 'levels', 'bosses', 'treasure', ...COUNTERS]) s[k] = count(raw[k]);
+    if (raw.byEnemy && typeof raw.byEnemy === 'object') {
+      for (const [k, v] of Object.entries(raw.byEnemy).slice(0, 60)) if (/^[a-z]{1,20}$/.test(k)) s.byEnemy[k] = count(v);
+    }
+    if (raw.heroes && typeof raw.heroes === 'object') {
+      for (const cls of Object.keys(CLASSES)) {
+        const h = raw.heroes[cls];
+        if (!h || typeof h !== 'object') continue;
+        const out = s.heroes[cls] = blankHero();
+        for (const k of Object.keys(out)) out[k] = count(h[k]);
+      }
+    }
+    if (Array.isArray(raw.runs)) s.runs = raw.runs.slice(0, TOP * 2).map(cleanRun).filter(Boolean);
+    s.folded = raw.folded === true;
+    if (Array.isArray(raw.recent)) s.recent = raw.recent.slice(0, 4).filter((id) => typeof id === 'string').map((id) => id.slice(0, 24));
+  } else {
+    // the old high score list becomes the first leaderboard
+    try {
+      const old = JSON.parse(localStorage.getItem(OLD_SCORES));
+      if (Array.isArray(old)) {
+        s.runs = old.slice(0, TOP).map((o, i) => o && cleanRun({
+          id: `old${i}`, cls: Object.keys(CLASSES).find((c) => CLASSES[c].name === o.name) || 'warrior',
+          score: o.score, level: o.level, mode: 'solo', players: 1, date: 0,
+        })).filter(Boolean);
+      }
+    } catch { /* nothing to bring over */ }
+  }
+  sortRuns(s.runs);
+  return s;
+}
+
+function cleanRun(r) {
+  if (!r || typeof r !== 'object' || !Object.hasOwn(CLASSES, r.cls)) return null;
+  return {
+    id: label(r.id, 24), cls: r.cls, score: count(r.score, 1e9), level: Math.floor(count(r.level, 16)),
+    lvl: Math.floor(count(r.lvl, 999)), kills: count(r.kills, 1e9), time: count(r.time, 1e8),
+    mode: ['solo', 'coop', 'online'].includes(r.mode) ? r.mode : 'solo', players: Math.max(1, Math.floor(count(r.players, 4))),
+    date: count(r.date, 1e14), won: !!r.won,
+  };
+}
+
+const heroKey = (p) => `${p.slot}:${p.cls}`;
+
+// best first; on a tie the run that got there first keeps its place
+function sortRuns(runs) { runs.sort((a, b) => b.score - a.score || a.date - b.date); }
+
+export class Stats {
+  constructor() {
+    this.data = loadStats();
+    this.dirty = false;
+    this.savedAt = 0;
+    // keyed by slot and hero (an online guest's copy of its hero is rebuilt on each level)
+    this.runs = new Map(); // hero -> its run this session
+    this.seen = new Map(); // online guest: last kills / gold / alive seen on our hero
+    const flush = () => this.save();
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+  }
+
+  hero(cls) { return this.data.heroes[cls] || (this.data.heroes[cls] = blankHero()); }
+
+  // One stat for one of this device's heroes. `n` is how much; `sub` the monster type for kills.
+  add(p, key, n = 1, sub) {
+    if (!COUNTERS.includes(key)) return;
+    this.data[key] += n;
+    this.hero(p.cls)[key] += n;
+    if (key === 'kills' && sub) this.data.byEnemy[sub] = (this.data.byEnemy[sub] || 0) + n;
+    this.dirty = true;
+  }
+
+  // A game begins (or a hero joins one) on this device: the hero's quest goes on (the run
+  // its save names, still on the board or rebuilt from the save) or a new one starts.
+  startRun(p, mode, players) {
+    const saved = p.savedRun && typeof p.savedRun === 'object' && typeof p.savedRun.id === 'string' && p.savedRun.id ? p.savedRun : null;
+    let run = saved && this.data.runs.find((r) => r.id === saved.id && r.cls === p.cls);
+    if (!run && saved) run = cleanRun({ ...saved, cls: p.cls });
+    if (!run) run = { id: Math.random().toString(36).slice(2, 12), cls: p.cls, score: 0, level: 0, lvl: p.lvl || 1, kills: 0, time: 0, mode, players, date: Date.now(), won: false };
+    run.score = Math.max(run.score, p.score || 0);
+    if (mode !== 'solo' && run.mode === 'solo') run.mode = mode;
+    run.players = Math.max(run.players, players);
+    this.runs.set(heroKey(p), run);
+    if (run.score > 0) this.board(run);
+    this.hero(p.cls).games++;
+    this.dirty = true;
+  }
+
+  // Once: before runs were whole quests, every play session made its own entry, so one hero
+  // could fill the board. Fold those into one entry per hero (its best score, the most it
+  // reached, all its time), joined to the hero's quest if it has one, which then carries on
+  // from that score. heroes: the saved heroes by class; returns true if any were changed.
+  foldOldRuns(heroes) {
+    if (this.data.folded) return false;
+    this.data.folded = true;
+    this.dirty = true;
+    let changed = false;
+    const kept = [];
+    for (const cls of new Set(this.data.runs.map((r) => r.cls))) {
+      const runs = this.data.runs.filter((r) => r.cls === cls);
+      const h = heroes && heroes[cls];
+      const questId = h && h.run && typeof h.run.id === 'string' ? h.run.id : null;
+      const quest = runs.find((r) => r.id === questId);
+      const into = quest || (questId ? cleanRun({ ...h.run, cls }) : null) || runs.reduce((a, b) => (b.score > a.score || (b.score === a.score && b.date < a.date) ? b : a));
+      into.score = Math.max(into.score, ...runs.map((r) => r.score));
+      into.level = Math.max(into.level, ...runs.map((r) => r.level));
+      into.lvl = Math.max(into.lvl, ...runs.map((r) => r.lvl));
+      into.kills = Math.max(into.kills, ...runs.map((r) => r.kills));
+      into.time = runs.filter((r) => r !== into).reduce((t, r) => t + r.time, into.time);
+      into.players = Math.max(into.players, ...runs.map((r) => r.players));
+      kept.push(into);
+      if (questId && typeof h.score === 'number' && h.score < into.score) {
+        h.score = into.score; // the quest goes on from the folded score
+        h.run = { ...h.run, score: into.score, level: into.level, time: into.time };
+        changed = true;
+      }
+    }
+    this.data.runs = kept;
+    this.data.recent = this.data.recent.filter((id) => kept.some((r) => r.id === id));
+    sortRuns(this.data.runs);
+    this.save();
+    return changed;
+  }
+
+  // What a hero's save keeps of its run, so the quest's entry carries on next time.
+  runInfo(p) {
+    const r = this.runs.get(heroKey(p));
+    if (!r) return p.savedRun || null;
+    const { id, score, level, time, mode, players, date, won } = r;
+    return { id, score, level, time, mode, players, date, won };
+  }
+
+  // The quest is won: the heroes' entries say so.
+  questWon(heroes) {
+    for (const p of heroes) { const r = this.runs.get(heroKey(p)); if (r) r.won = true; }
+    this.dirty = true;
+  }
+
+  gameStarted(online) {
+    this.data.games++;
+    if (online) this.data.online++;
+    this.dirty = true;
+  }
+
+  levelCleared(heroes, boss) {
+    this.data.levels++;
+    if (boss) this.data.bosses++;
+    for (const p of heroes) this.hero(p.cls).levels++;
+    this.dirty = true;
+  }
+
+  treasureDone() { this.data.treasure++; this.dirty = true; }
+
+  // Every frame of play: time played, and each hero's run on the leaderboard.
+  //   heroes: this device's heroes in the game · levelNum: the stage being played (0 = hub)
+  tick(dt, heroes, levelNum, players) {
+    this.data.time += dt;
+    for (const p of heroes) {
+      const h = this.hero(p.cls);
+      h.time += dt;
+      let run = this.runs.get(heroKey(p));
+      if (!run) { this.startRun(p, players.mode, players.n); run = this.runs.get(heroKey(p)); }
+      run.time += dt;
+      run.players = Math.max(run.players, players.n);
+      if (players.mode !== 'solo' && run.mode === 'solo') run.mode = players.mode;
+      if (levelNum > run.level) run.level = levelNum;
+      run.lvl = p.lvl || run.lvl;
+      run.kills = Math.max(run.kills, p.kills || 0);
+      if (p.score > run.score) { // (a run's best: dying costs points earned on the stage)
+        run.score = p.score;
+        if (run.score > h.best) h.best = run.score;
+        if (run.score > 0) this.board(run);
+      }
+    }
+    const now = Date.now();
+    if (now - this.savedAt > 5000) { this.savedAt = now; this.save(); }
+  }
+
+  // Online guest: the host plays out the game, so read our hero's progress off what it sends.
+  guestTick(p) {
+    const last = this.seen.get(heroKey(p));
+    if (last) {
+      if (p.kills > last.kills) this.add(p, 'kills', p.kills - last.kills);
+      if (p.gold > last.gold) this.add(p, 'gold', p.gold - last.gold);
+      if (last.alive && !p.alive) this.add(p, 'deaths');
+    }
+    this.seen.set(heroKey(p), { kills: p.kills || 0, gold: p.gold || 0, alive: p.alive });
+  }
+
+  board(run) {
+    const runs = this.data.runs;
+    if (!runs.includes(run)) {
+      const i = runs.findIndex((r) => r.id === run.id);
+      if (i >= 0) runs[i] = run; else runs.push(run);
+    }
+    sortRuns(runs);
+    this.dirty = true;
+  }
+
+  // The game is over or left: these runs are finished. Returns the ones that made the
+  // board ({ cls, rank, score }) so the player can be told.
+  endRuns() {
+    const placed = [];
+    const ended = [...this.runs.values()].filter((r) => r.score > 0);
+    for (const r of ended) {
+      const i = this.data.runs.indexOf(r);
+      if (i >= 0 && i < TOP) placed.push({ cls: r.cls, rank: i + 1, score: r.score });
+    }
+    if (ended.length) { this.data.recent = ended.map((r) => r.id).slice(0, 4); this.dirty = true; }
+    this.runs.clear();
+    this.seen.clear();
+    this.save();
+    return placed.sort((a, b) => a.rank - b.rank);
+  }
+
+  // Runs from the last game (or the one being played), for the board to highlight.
+  isRecent(run) { return this.data.recent.includes(run.id) || [...this.runs.values()].includes(run); }
+
+  // Place on the leaderboard (1-based) of a hero's current run, or 0.
+  rankOf(p) {
+    const run = this.runs.get(heroKey(p));
+    const i = run ? this.data.runs.indexOf(run) : -1;
+    return i >= 0 && i < TOP ? i + 1 : 0;
+  }
+
+  save() {
+    if (!this.dirty) return;
+    this.dirty = false;
+    const keep = new Set([...this.runs.values()]);
+    // the top 10, plus runs still being played (they may climb back on)
+    this.data.runs = this.data.runs.filter((r, i) => i < TOP || keep.has(r));
+    try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch { /* storage unavailable */ }
+  }
+
+  get top() { return this.data.runs.slice(0, TOP); }
+}

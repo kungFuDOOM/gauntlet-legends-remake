@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!-- Security: only this site's own files may run (plus WebAssembly for the 3D model decoder,
+       and the import map below, pinned by its hash: test/security.test.js checks it). Online play
+       may talk to the PeerJS matchmaking server. If you edit the import map or use your own
+       PeerJS server, update this line. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-98FR/5EhpsYi7t2PObXfZgeFRlxSOl/QKHA09y3mtL4='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data: https://0.peerjs.com wss://0.peerjs.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>Gauntlet Legends Remake</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
+    body { display: flex; align-items: center; justify-content: center; }
+    #stage { position: relative; box-shadow: 0 0 60px rgba(255, 150, 50, 0.15); }
+    #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #webgl { background: #000; }
+    #error { color: #f2c14e; font: 18px Georgia, serif; text-align: center; padding: 40px; display: none; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="webgl"></canvas>
+    <canvas id="hud"></canvas>
+  </div>
+  <div id="error">This game needs WebGL. Please use a recent browser with hardware acceleration enabled.</div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
