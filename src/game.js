@@ -2,7 +2,7 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, maxSpeed, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, maxSpeed, startSpeed, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
 import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable, enemyWeights } from './level.js';
 import { sfx, say } from './audio.js';
@@ -48,7 +48,7 @@ export class Game {
       kind: 'player', slot, source, cls, def, name: def.name, color: def.color,
       x: 0, y: 0, r: 12, fx: 0, fy: 1, alive: true,
       hp: def.hp, score: 0, keys: 0, potions: 1, xp: 0, lvl: 1,
-      strength: def.strength, shotDmg: def.shotDmg, armor: def.armor, speed: def.speed, magic: def.magic,
+      strength: def.strength, shotDmg: def.shotDmg, armor: def.armor, speed: startSpeed(def), magic: def.magic,
       shotCd: 0, turbo: 50, buffs: {}, hurtFlash: 0, invuln: 0, dash: null, swing: 0, walk: 0, throwT: 0,
       warnT: 0, deadT: 0, drain: 0, gold: 0, kills: 0,
     };

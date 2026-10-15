@@ -162,6 +162,16 @@ export const MAX_POTIONS = 9;
 export const MAX_ARMOR = 0.65;
 // The fastest a hero gets from levels and Speed upgrades: a third faster than they started
 // (and never past 210), so a high-level hero is quick without being uncontrollable.
+// Starting run speed is boosted +10% (slowest class) to +20% (fastest class), scaled by the class's speed stat.
+// The upgrade cap (maxSpeed) still uses the unboosted base stat, so progression is unchanged.
+export const START_SPEED_BOOST_MIN = 0.10;
+export const START_SPEED_BOOST_MAX = 0.20;
+export function startSpeed(def) {
+  const speeds = Object.values(CLASSES).map(c => c.speed);
+  const lo = Math.min(...speeds), hi = Math.max(...speeds);
+  const t = hi > lo ? (def.speed - lo) / (hi - lo) : 0.5;
+  return def.speed * (1 + START_SPEED_BOOST_MIN + t * (START_SPEED_BOOST_MAX - START_SPEED_BOOST_MIN));
+}
 export function maxSpeed(def) { return Math.round(Math.min(def.speed * 1.35, 210)); }
 
 // Points. Everything a hero scores on a stage is worth more the deeper the stage (x1 on the
