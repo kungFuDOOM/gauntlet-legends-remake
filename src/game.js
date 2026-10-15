@@ -2,7 +2,7 @@
 
 import {
   TILE, WORLD_VIEW_W as VIEW_W, WORLD_VIEW_H as VIEW_H, HUD_H, CLASSES, CLASS_ORDER, ENEMIES, GENERATOR_HP, MAX_ENEMIES,
-  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, maxSpeed, startSpeed, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
+  POWERUPS, POWERUP_ORDER, LOBBED, BLAST, difficulty, stagePoints, REPLAY_POINTS, STAGE_BONUS, TURBO_COST, MAX_KEYS, MAX_POTIONS, maxSpeed, startSpeed, SPEED_BOOTS_MULT, SPEED_BOOTS_PEAK_CAP, HEALTH_DRAIN, FOOD_HEAL, xpForLevel,
 } from './config.js';
 import { T, generateLevel, generateTreasureRoom, generateHub, generateTutorial, bfs, walkable, enemyWeights } from './level.js';
 import { sfx, say } from './audio.js';
@@ -481,7 +481,7 @@ export class Game {
     if (p.hp <= 0) { this.killPlayer(p); return; }
 
     // Movement / dash
-    let speed = p.speed * (p.buffs.speed ? 1.5 : 1);
+    let speed = p.buffs.speed ? Math.min(p.speed * SPEED_BOOTS_MULT, SPEED_BOOTS_PEAK_CAP) : p.speed;
     let mx = inp.x, my = inp.y;
     if (p.dash) {
       p.dash.t -= dt;
