@@ -7,7 +7,7 @@ import { Input } from './input.js';
 import { TouchControls } from './touch.js';
 import { Tutorial, tutorialView } from './tutorial.js';
 import { Game } from './game.js';
-import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, say, stopVoice, audioTap } from './audio.js';
+import { initAudio, sfx, toggleMute, toggleVoice, toggleMusic, playMusic, currentMusic, setMusicIntensity, setMusicPaused, say, stopVoice, audioTap } from './audio.js';
 import { Host, Guest, showCode } from './net.js';
 import { SnapshotWriter, SnapshotReader, playSound, cleanUi, cleanEvents, cleanGame } from './netstate.js';
 import { Lobby } from './lobby.js';
@@ -16,6 +16,8 @@ import { loadAssets } from './assets.js';
 import { drawGameOverlay, drawLoading, drawTitle, drawSelect, drawOverlay, drawStory, drawRealmPick, drawShop, drawEnding, drawRecords, recordsTapAt, titleRecordsAt, selectArrowAt, shopItemAt, realmStageAt, titleOnlineAt, setDevice, btn, titleShowcase, selectShowcase, storyShowcase, partyShowcase } from './hud.js';
 import { realmOf, unlockedClasses, SECRET_HEROES, loadSave, writeSave, newSave, hasProgress, isUnlocked, levelNumber, nextStage, completeLevel, runeCount, TOTAL_RUNES, SHOP, buy, STORY } from './campaign.js';
 import { levelInfo } from './level.js';
+import { trackFor } from './music-data.js';
+import { phaseOf } from './bosses.js';
 import { Stats } from './stats.js';
 
 // Always load the newest version of the game after an update (see sw.js).
@@ -747,17 +749,21 @@ function updateEnding() {
   if (stateT > 3 && (input.firstPressed('attack') || input.anyStart())) { persist(); game = null; setState('title'); }
 }
 
-// Background music for whatever is on screen.
+// Background music for whatever is on screen (the track table is in music-data.js).
 function currentTrack() {
-  if (state === 'shop') return 'shop';
-  if (game && game.level && game.level.hub) return 'castle';
-  if (state === 'ending') return 'victory';
-  if ((state === 'play' || state === 'paused' || state === 'levelclear' || state === 'gameover') && game && game.level) {
-    if (game.level.treasure) return 'treasure';
-    if (game.info.isBoss) return 'boss';
-    return game.info.style;
-  }
-  return 'title';
+  const inLevel = !!(game && game.level && ['play', 'paused', 'levelclear', 'gameover', 'realm', 'shop'].includes(state));
+  return trackFor({
+    state, inLevel,
+    hub: inLevel && !!game.level.hub, tutorial: inLevel && !!game.level.tutorial, treasure: inLevel && !!game.level.treasure,
+    isBoss: inLevel && !!game.info.isBoss, levelNum: game ? game.levelNum : 0,
+  });
+}
+
+// A guardian's music gets heavier as it is hurt: enraged at two thirds, furious at one third.
+function musicIntensity() {
+  const b = game && game.boss;
+  if (!b || (state !== 'play' && state !== 'paused') || !game.info.isBoss || b.hp <= 0) return 0;
+  return phaseOf(b) - 1;
 }
 
 function render() {
@@ -869,6 +875,8 @@ function frame(now) {
   if (input.key('KeyV')) { toast = { text: toggleVoice() ? 'Announcer ON' : 'Announcer OFF', t: 1.5, local: true }; }
   if (input.key('KeyN')) { initAudio(); toast = { text: toggleMusic() ? 'Music ON' : 'Music OFF', t: 1.5, local: true }; }
   playMusic(currentTrack());
+  setMusicIntensity(musicIntensity());
+  setMusicPaused(state === 'paused');
   if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
   lobby.update(state, net && (net.role === 'host'
     ? { role: 'host', code: net.code, players: net.link.count, guests: guestList(), locked: net.link.locked }
@@ -922,7 +930,7 @@ function loop(now) {
 }
 
 // Debug/test hook (used by automated smoke tests).
-window.__gl = { get net() { return net; }, get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; } };
+window.__gl = { get music() { return currentMusic(); }, get intensity() { return musicIntensity(); }, get net() { return net; }, get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; } };
 
 // Scale canvas to fit window while keeping aspect ratio.
 function fit() {

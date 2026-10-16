@@ -125,7 +125,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Pixel-art rendering:** the 3D view is drawn at a low resolution and scaled up with hard pixel edges for a retro look (press `X` to change it).
 - **Animated characters.** Heroes run, swing, throw, cast and play hit and death animations; attacks blend onto the upper body so you can fight while running. Skeletons claw their way out of the ground when a generator spawns them and collapse when slain.
 - **Breakable barrels and treasure chests**, gates that sink into the floor when unlocked, and a swirling exit portal.
-- **Music** composed on the fly for the title, each realm, boss fights, the shop, treasure rooms and the victory screen.
+- **Music**: 26 original synthesized tracks, one for every level and every guardian, plus the title, story, hub, training grounds, shop, treasure room, stage-clear and defeat stingers and the victory screen. Guardian themes gain layers as the fight heats up. Nothing is downloaded; `node tools/render-music.mjs` renders previews.
 - **Difficulty that scales** with the stage, the size of the party and the heroes' level: every stage is a step harder than the last (tougher monsters, busier generators, more of them waiting), and bigger parties face more. Each stage expects heroes of about a certain level; a party that's ahead (from replaying stages, say) meets monsters that make up 40% of its lead, so leveling up still makes a stage easier, just not a walkover. Guardians scale the same way. Treasure is worth more in later realms.
 - **Arcade announcer** with pre-recorded neural-voice lines ("Warrior needs food, badly!"), made with the open Kokoro voice model; `V` turns it off. Also: a shared camera that keeps the party together, a minimap of explored areas, stats and a leaderboard, and drop-in "continue" after dying.
 
@@ -156,7 +156,9 @@ src/tutorial.js   the Training Grounds lessons
 src/net.js        online play: hosting and joining by room code (PeerJS / WebRTC)
 src/netstate.js   online play: packing the game into snapshots and mirroring them on guests
 src/lobby.js      online play: the PLAY ONLINE panel and the room bar
-src/audio.js      synthesized sound effects, music and the announcer
+src/audio.js      synthesized sound effects, the announcer and the music controls
+src/music-data.js the music table: every level's track, key and tempo
+src/music.js      the music engine (a Web Audio step sequencer)
 src/config.js     tuning tables for classes, enemies and power-ups
 test/             node:test suite (level generation and solvability, online snapshots, stats, security)
 ```

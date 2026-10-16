@@ -1,5 +1,7 @@
 // Synthesized sound effects (Web Audio) and the announcer (Web Speech).
 
+import { createMusic } from './music.js';
+
 let ctx = null;
 let master = null;
 let muted = false;
@@ -25,7 +27,7 @@ export function initAudio() {
 export function toggleMute() {
   muted = !muted;
   if (muted) stopVoice();
-  if (musicBus) musicBus.gain.setTargetAtTime(muted || !musicOn ? 0 : MUSIC_VOL, ctx.currentTime, 0.05);
+  if (musicBus) musicBus.gain.setTargetAtTime(musicLevel(), ctx.currentTime, 0.05);
   return muted;
 }
 export const isMuted = () => muted;
@@ -198,137 +200,58 @@ export function say(text, key = text, cooldown = 8000) {
 }
 
 // ---------- music ----------
-// A tiny step sequencer that composes each track from a chord progression: pad chords,
-// a bass line, an arpeggio and a drum pattern, scheduled ahead on the audio clock.
+// Every level, guardian, hub, menu and stinger has its own synthesized track (see
+// music-data.js and music.js). This part wires the engine to the mute / music toggles,
+// pausing and the tab being hidden.
 
 const MUSIC_VOL = 0.55;
 let musicBus = null;
+let engine = null;
 let musicOn = true;
-let track = null;
 let timer = null;
-let nextStep = 0;
-let step = 0;
+let wantPaused = false;
 
-// semitone offsets from the root for minor/major triads
-const TRIAD = { m: [0, 3, 7], M: [0, 4, 7] };
-const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+const musicLevel = () => (muted || !musicOn ? 0 : MUSIC_VOL);
 
-// root: MIDI note; prog: [semitones above root, quality] per bar; drums: pattern strings per 16th
-const TRACKS = {
-  title:    { bpm: 84,  root: 50, prog: [[0, 'm'], [-4, 'M'], [-2, 'M'], [-5, 'M']], arp: 'slow', drums: 'none', lead: true },
-  canyon:   { bpm: 112, root: 52, prog: [[0, 'm'], [3, 'M'], [-2, 'M'], [-5, 'M']], arp: 'run', drums: 'march' },
-  castle:   { bpm: 100, root: 48, prog: [[0, 'm'], [-4, 'M'], [-7, 'M'], [-5, 'M']], arp: 'broken', drums: 'march' },
-  sky:      { bpm: 92,  root: 55, prog: [[0, 'M'], [5, 'M'], [-3, 'm'], [7, 'M']], arp: 'bell', drums: 'soft' },
-  inferno:  { bpm: 124, root: 45, prog: [[0, 'm'], [1, 'M'], [0, 'm'], [-2, 'M']], arp: 'run', drums: 'driving' },
-  boss:     { bpm: 140, root: 47, prog: [[0, 'm'], [1, 'M'], [-1, 'M'], [0, 'm']], arp: 'run', drums: 'driving', lead: true },
-  shop:     { bpm: 96,  root: 53, prog: [[0, 'M'], [-3, 'm'], [5, 'M'], [7, 'M']], arp: 'bell', drums: 'soft' },
-  treasure: { bpm: 150, root: 57, prog: [[0, 'M'], [5, 'M'], [7, 'M'], [5, 'M']], arp: 'run', drums: 'driving' },
-  victory:  { bpm: 90,  root: 53, prog: [[0, 'M'], [5, 'M'], [-3, 'm'], [7, 'M']], arp: 'slow', drums: 'soft', lead: true },
-};
-
-const DRUMS = {
-  none:    { k: '', s: '', h: '' },
-  soft:    { k: 'x.......x.......', s: '', h: '..x...x...x...x.' },
-  march:   { k: 'x.......x.x.....', s: '....x.......x...', h: 'x.x.x.x.x.x.x.x.' },
-  driving: { k: 'x...x...x...x...', s: '....x.......x..x', h: 'xxxxxxxxxxxxxxxx' },
-};
-
-function note(freq, t, dur, { type = 'triangle', vol = 0.1, cutoff = 2400, attack = 0.01 } = {}) {
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
-  const f = ctx.createBiquadFilter();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t);
-  f.type = 'lowpass';
-  f.frequency.value = cutoff;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(vol, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(f).connect(g).connect(musicBus);
-  osc.start(t);
-  osc.stop(t + dur + 0.05);
-}
-
-function drum(kind, t) {
-  if (kind === 'k') {
-    const osc = ctx.createOscillator(), g = ctx.createGain();
-    osc.frequency.setValueAtTime(140, t);
-    osc.frequency.exponentialRampToValueAtTime(40, t + 0.15);
-    g.gain.setValueAtTime(0.5, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-    osc.connect(g).connect(musicBus);
-    osc.start(t); osc.stop(t + 0.2);
-    return;
-  }
-  const len = kind === 's' ? 0.16 : 0.04;
-  const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * len), ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
-  const src = ctx.createBufferSource();
-  src.buffer = buf;
-  const f = ctx.createBiquadFilter();
-  f.type = kind === 's' ? 'bandpass' : 'highpass';
-  f.frequency.value = kind === 's' ? 1800 : 7000;
-  const g = ctx.createGain();
-  g.gain.value = kind === 's' ? 0.28 : 0.07;
-  src.connect(f).connect(g).connect(musicBus);
-  src.start(t);
-}
-
-function scheduleStep(tr, t) {
-  const sixteenth = 60 / tr.bpm / 4;
-  const bar = Math.floor(step / 16) % tr.prog.length;
-  const s16 = step % 16;
-  const [offset, q] = tr.prog[bar];
-  const root = tr.root + offset;
-  const chord = TRIAD[q].map((iv) => root + iv);
-  if (s16 === 0) {
-    // pad: the whole chord, held for the bar
-    for (const n of chord) note(midi(n + 12), t, sixteenth * 16, { type: 'sawtooth', vol: 0.025, cutoff: 900, attack: 0.25 });
-  }
-  if (s16 % 4 === 0 || (tr.drums === 'driving' && s16 % 2 === 0)) {
-    note(midi(root - 12 + (s16 === 8 && tr.drums !== 'none' ? 7 : 0)), t, sixteenth * 3, { type: 'square', vol: 0.07, cutoff: 500 });
-  }
-  const arpNotes = [...chord, chord[0] + 12, chord[1] + 12];
-  const arp = { slow: s16 % 4 === 0, run: true, broken: s16 % 2 === 0, bell: s16 % 3 === 0 }[tr.arp];
-  if (arp) {
-    const n = arpNotes[(step * (tr.arp === 'broken' ? 3 : 1)) % arpNotes.length] + 12;
-    note(midi(n), t, sixteenth * (tr.arp === 'bell' ? 4 : 1.5), { type: tr.arp === 'bell' ? 'sine' : 'square', vol: tr.arp === 'bell' ? 0.05 : 0.025, cutoff: 3000 });
-  }
-  if (tr.lead && (s16 === 0 || s16 === 6 || s16 === 10)) {
-    const melody = [chord[2] + 12, chord[1] + 12, chord[0] + 12][(s16 / 4) | 0] ?? chord[0] + 12;
-    note(midi(melody), t, sixteenth * 5, { type: 'triangle', vol: 0.06, cutoff: 2600, attack: 0.03 });
-  }
-  const dr = DRUMS[tr.drums];
-  for (const k of ['k', 's', 'h']) if (dr[k][s16] === 'x') drum(k, t);
-}
-
-function tick() {
-  if (!ctx || !track) return;
-  const tr = TRACKS[track];
-  const sixteenth = 60 / tr.bpm / 4;
-  while (nextStep < ctx.currentTime + 0.12) {
-    scheduleStep(tr, nextStep);
-    nextStep += sixteenth;
-    step++;
-  }
-}
-
-export function playMusic(name) {
-  if (!ctx || name === track) return;
-  if (!musicBus) {
+function ensureMusic() {
+  if (!ctx) return false;
+  if (!engine) {
     musicBus = ctx.createGain();
-    musicBus.gain.value = muted || !musicOn ? 0 : MUSIC_VOL;
+    musicBus.gain.value = musicLevel();
     musicBus.connect(master);
+    engine = createMusic(ctx, musicBus);
+    if (wantPaused) engine.setPaused(true);
   }
-  track = TRACKS[name] ? name : null;
-  step = 0;
-  nextStep = ctx.currentTime + 0.05;
-  if (!timer) timer = setInterval(tick, 25);
+  if (!timer) timer = setInterval(() => { if (!document.hidden) engine.tick(); }, 40);
+  return true;
+}
+
+// name: a track id from music-data.js; playing the same one again does nothing
+export function playMusic(name) {
+  if (!ensureMusic()) return;
+  engine.play(name);
+}
+export const currentMusic = () => (engine ? engine.current : null);
+
+// boss tracks gain layers as the guardian gets angrier (0 calm, 1 enraged, 2 furious)
+export function setMusicIntensity(level) { if (engine) engine.setIntensity(level); }
+
+// hold the music while the game is paused
+export function setMusicPaused(on) {
+  wantPaused = on;
+  if (engine) engine.setPaused(on);
 }
 
 export function toggleMusic() {
   musicOn = !musicOn;
-  if (musicBus) musicBus.gain.setTargetAtTime(muted || !musicOn ? 0 : MUSIC_VOL, ctx.currentTime, 0.05);
+  if (musicBus) musicBus.gain.setTargetAtTime(musicLevel(), ctx.currentTime, 0.05);
   return musicOn;
+}
+
+// switching tabs: silence the audio clock entirely, and pick up where it was on return
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx) return;
+    if (document.hidden) { if (ctx.state === 'running') ctx.suspend(); } else if (ctx.state === 'suspended') ctx.resume();
+  });
 }
