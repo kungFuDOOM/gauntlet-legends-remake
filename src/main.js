@@ -129,6 +129,7 @@ function setState(s) {
   if (s === 'stats' && recordsTab === 3) loadGlobal();
   if (s === 'gameover' || s === 'ending') offerPending = true;
   state = s; stateT = 0;
+  document.body.classList.toggle('on-title', s === 'title');
 }
 
 // A second player on the same keyboard joins with the 2 key: player 1 keeps WASD (and the
