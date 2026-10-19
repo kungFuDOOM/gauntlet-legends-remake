@@ -92,7 +92,7 @@ async def main():
             print(tag, 'rows:', rows)
             # offline: REFRESH shows a friendly message, no errors
             await ctx.set_offline(True)
-            if touch: await tap_canvas(pg, True, 744, 34)
+            if touch: await tap_canvas(pg, True, 880, 34)
             else: await pg.keyboard.press('KeyR')
             await wait("G.globalBoard.status=='error'", 12000); await pg.wait_for_timeout(300); await shot('7_global_offline')
             await pg.keyboard.press('Escape') if not touch else await tap_canvas(pg, True, 72, 34)

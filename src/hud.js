@@ -954,16 +954,17 @@ function drawRecordsButton(ctx) {
 const RECORD_TABS = ['OVERVIEW', 'HEROES', 'LEADERBOARD', 'GLOBAL'];
 const TAB_W = 190, TAB_H = 42, TAB_GAP = 10, TAB_Y = 72;
 const TAB_X0 = (VIEW_W - (TAB_W * RECORD_TABS.length + TAB_GAP * (RECORD_TABS.length - 1))) / 2;
-// GLOBAL page only; with touch controls on screen it keeps clear of the buttons down the right side
-const refreshBtn = () => (document.body.classList.contains('touching') ? { x: 686, y: 14, w: 116, h: 40 } : { x: VIEW_W - 14 - 150, y: 14, w: 150, h: 40 });
+// GLOBAL page only. Top-right corner (mirrors BACK), well clear of the centred title.
+const refreshBtn = () => ({ x: VIEW_W - 14 - 130, y: 14, w: 130, h: 40 });
+// Hit area: padded so it is >= 34 screen px tall even on a small phone (canvas scaled ~0.6), but it stops above the tab row.
+const hitRefresh = (x, y) => { const r = refreshBtn(); return x >= r.x - 10 && x <= r.x + r.w + 14 && y >= 2 && y <= TAB_Y - 8; };
 const BACK_BTN = { x: 14, y: 14, w: 116, h: 40 };
 
 // What a tap on the stats screen hits: a tab (0-3), 'back', 'refresh' (GLOBAL page), or null.
 export function recordsTapAt(x, y, tab = 0) {
   const b = BACK_BTN;
   if (x >= b.x - 6 && x <= b.x + b.w + 6 && y >= b.y - 6 && y <= b.y + b.h + 6) return 'back';
-  const r = refreshBtn();
-  if (tab === 3 && x >= r.x - 6 && x <= r.x + r.w + 6 && y >= r.y - 6 && y <= r.y + r.h + 6) return 'refresh';
+  if (tab === 3 && hitRefresh(x, y)) return 'refresh';
   if (y < TAB_Y - 6 || y > TAB_Y + TAB_H + 6) return null;
   for (let i = 0; i < RECORD_TABS.length; i++) {
     const tx = TAB_X0 + i * (TAB_W + TAB_GAP);
