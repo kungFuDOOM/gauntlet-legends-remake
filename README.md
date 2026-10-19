@@ -86,7 +86,7 @@ The demon lord Skorne has broken free of the seal that bound him, and the Rune S
 - **Treasure rooms:** beat a guardian for the first time and the party gets 25 seconds in a vault heaped with gold, gems and chests. Beating it again doesn't reopen the vault, and a Rune Stone's gold is paid only the first time it's recovered, so replaying guardians isn't a gold farm.
 - **Secret heroes:** four more heroes join as the quest goes on: the **Minotaur** (defeat the Dragon), the **Falconess** (defeat the Chimera), the **Jackal** (defeat the Plague Fiend) and the **Tigress** (recover 12 Rune Stones).
 - **Saved progress:** your heroes (level, stats, upgrades, gold) and quest progress are saved in the browser. Pick the same class next time to carry on, or press Magic on the title screen to start a new quest.
-- **Stats & leaderboard:** the **🏆 STATS & LEADERBOARD** button on the title screen (or `L`) opens the Hall of Legends: lifetime stats (time played, monsters slain by type, gold, deaths, potions, guardians...), a table of every hero you've played, and the 10 best runs. A run is one hero's **whole quest**: the score is saved with the hero, so quitting and coming back carries on the same entry, until you start a new quest (a finished quest is marked ★ Quest complete). A tie keeps the earlier run ahead.
+- **Stats & leaderboard:** the **🏆 STATS & LEADERBOARD** button on the title screen (or `L`) opens the Hall of Legends: lifetime stats (time played, monsters slain by type, gold, deaths, potions, guardians...), a table of every hero you've played, and the 10 best runs. A **GLOBAL** page shows the worldwide top 10 (one entry per player name; **REFRESH** or `R` reloads it), and when a run ends (game over or quest won) you can enter a name to submit your own hero's score (3-12 characters, remembered, skip any time; it needs a network connection and the game works without one). Scores are kept in a free Supabase table (`supabase/gauntlet_scores.sql`) that only a submit and a top-10 function can reach; scores are sent by the browser, so a determined cheater could fake one (limits: score range, 1 submit per 15 s and 20 per hour per browser, and a hidden flag to remove entries). A run is one hero's **whole quest**: the score is saved with the hero, so quitting and coming back carries on the same entry, until you start a new quest (a finished quest is marked ★ Quest complete). A tie keeps the earlier run ahead.
 - **Scoring:** monsters (10–60 points each, Death 1,000, a guardian 5,000), generators 100, gold 100, gems 500, Rune Stones 5,000 (a guardian's) or 2,500 (hidden), and 500 for the first hero to the exit. Points are worth more the deeper the stage (x1 on the first, up to x2.5 in the Underworld) and **half on a stage you've already cleared**, so pushing on beats farming. Clearing a stage pays a **bonus**, shown on the Level Complete screen: 500 (2,000 for a guardian), 5 points for every second under par (5 minutes, 3 for a guardian), and 1,000 for clearing it without dying. Dying and continuing costs half the points scored on that stage; a Game Over takes back all of them (the stage restarts). Online guests' heroes are fresh each session, so their runs last a session. Game Over and the title screen tell you when a run makes the board, and your latest runs are marked NEW. They're kept in this browser; online guests' stats count their own hero.
 
 
@@ -146,7 +146,8 @@ src/assets.js     loads the KayKit models; Actor = animated character with separ
 src/models.js     procedural models for the Dragon, Chimera and Plague Fiend, magic pickups, effects
 src/monsters.js   each realm's monsters: built on the hero rig (merged into a few skinned meshes) or procedural beasts
 src/hud.js        2D overlay: corner player panels, floating text, banners, menus
-src/stats.js      lifetime stats and the leaderboard (kept in the browser)
+src/stats.js      lifetime stats and the local leaderboard (kept in the browser)
+src/leaderboard.js, src/lbprompt.js, src/lbconfig.js   the global leaderboard: client, name prompt, public key
 vendor/           three.js + GLTFLoader, SkeletonUtils, meshopt decoder, PeerJS (all MIT)
 assets/models/    CC0 KayKit models, prepared by tools/build-assets.mjs
 assets/voice/     announcer recordings, made by tools/voice-lines.mjs + tools/build-voice.py
@@ -187,5 +188,5 @@ npm test
 - Teleporters
 - A unique arena layout for each boss
 - Stat allocation on level-up
-- A worldwide leaderboard (needs a small server or hosted database to collect scores, plus checks against faked scores)
+- Server-side checks against faked leaderboard scores (the worldwide leaderboard trusts the browser's score)
 - Online play: guests' own saved heroes, smoother movement for guests (predicting their own hero locally), reconnecting after a dropped connection, and a dedicated server so the host leaving doesn't end the game

@@ -249,6 +249,17 @@ export class Stats {
     return placed.sort((a, b) => a.rank - b.rank);
   }
 
+  // The run worth offering to the global leaderboard: the best-scoring of these heroes (only
+  // this device's own: never an online partner's), as { id, cls, score, level, won } or null.
+  globalCandidate(heroes) {
+    let best = null;
+    for (const p of heroes) {
+      const r = this.runs.get(heroKey(p));
+      if (r && r.score > 0 && (!best || r.score > best.score)) best = { id: r.id, cls: r.cls, score: r.score, level: r.level, won: r.won };
+    }
+    return best;
+  }
+
   // Runs from the last game (or the one being played), for the board to highlight.
   isRecent(run) { return this.data.recent.includes(run.id) || [...this.runs.values()].includes(run); }
 

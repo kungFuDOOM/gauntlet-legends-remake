@@ -19,6 +19,8 @@ import { levelInfo } from './level.js';
 import { trackFor } from './music-data.js';
 import { phaseOf } from './bosses.js';
 import { Stats } from './stats.js';
+import { fetchTop, getName, getMine } from './leaderboard.js';
+import { LbPrompt } from './lbprompt.js';
 
 // Always load the newest version of the game after an update (see sw.js).
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -79,7 +81,38 @@ let magicHint = { t: 20, shown: 0 }; // reminders that magic exists
 
 // lifetime stats and the leaderboard (see stats.js)
 const stats = new Stats();
-let recordsTab = 0; // page shown on the stats screen
+let recordsTab = 0; // page shown on the stats screen (0-2 local, 3 = the online leaderboard)
+
+// The global (online) leaderboard: fetched when its page is opened or refreshed. Failing
+// (offline, server down) only changes what that page says; nothing else depends on it.
+let globalBoard = { status: 'loading', rows: [] };
+let globalSeq = 0;
+function loadGlobal() {
+  const seq = ++globalSeq;
+  globalBoard = { status: 'loading', rows: globalBoard.rows };
+  fetchTop(10).then((rows) => { if (seq === globalSeq) globalBoard = { status: 'ok', rows }; })
+    .catch(() => { if (seq === globalSeq) globalBoard = { status: 'error', rows: [] }; });
+}
+const isMineRow = (r) => { const n = getName().toLowerCase(); return getMine().includes(r.id) || (!!n && r.name.toLowerCase() === n); };
+
+// The end of a run (game over, or the quest won) offers this device's own hero's score to the
+// global leaderboard (see lbprompt.js): never an online partner's. Asked once per score.
+const lbPrompt = new LbPrompt();
+const offered = new Map(); // run id -> the score already offered (or skipped), so it isn't asked again
+let offerPending = false;
+function ownHeroes() {
+  if (!game) return [];
+  return game.allPlayers().filter((p) => (net && net.role === 'guest' ? p.source === net.me : !isNet(p.source)));
+}
+function maybeOffer() {
+  offerPending = false;
+  if (!game || (game.level && game.level.tutorial) || lbPrompt.isOpen) return;
+  const c = stats.globalCandidate(ownHeroes());
+  if (!c || c.score <= (offered.get(c.id) || 0)) return;
+  offered.set(c.id, c.score);
+  lbPrompt.open({ score: c.score, cls: c.cls, clsName: CLASSES[c.cls].name, level: c.level, won: state === 'ending' || c.won },
+    input.lastDevice === 'pad' ? 'Gamepad: A to submit, B to skip' : '');
+}
 // the title screen shows the best run
 const fmtPts = (n) => Math.round(n).toLocaleString('en-US');
 function topScores() { return stats.top.map((r) => ({ name: CLASSES[r.cls].name, score: r.score, level: r.level })); }
@@ -93,6 +126,8 @@ function announceRuns(placed) {
 function setState(s) {
   if (window.__traceStates) console.log(`state ${state} -> ${s}`);
   if (s === 'title') { input.split = false; announceRuns(stats.endRuns()); } // a new party starts with one keyboard player
+  if (s === 'stats' && recordsTab === 3) loadGlobal();
+  if (s === 'gameover' || s === 'ending') offerPending = true;
   state = s; stateT = 0;
 }
 
@@ -191,11 +226,14 @@ function updateRecords() {
   let dir = 0;
   for (const id of local) { const p = input.get(id).pressed; if (p.left) dir--; if (p.right) dir++; }
   for (const t of taps) {
-    const hit = recordsTapAt(t.x, t.y);
+    const hit = recordsTapAt(t.x, t.y, recordsTab);
     if (hit === 'back') { sfx.select(); setState('title'); return; }
-    if (hit !== null && hit !== recordsTab) { recordsTab = hit; sfx.select(); }
+    if (hit === 'refresh') { if (globalBoard.status !== 'loading') { sfx.select(); loadGlobal(); } continue; }
+    if (hit !== null && hit !== recordsTab) { recordsTab = hit; sfx.select(); if (hit === 3) loadGlobal(); }
   }
-  if (dir) { recordsTab = (recordsTab + dir + 3) % 3; sfx.select(); }
+  if (dir) { recordsTab = (recordsTab + dir + 4) % 4; sfx.select(); if (recordsTab === 3) loadGlobal(); }
+  // REFRESH on the global page: R, or the attack button
+  if (recordsTab === 3 && globalBoard.status !== 'loading' && (input.key('KeyR') || local.some((id) => input.get(id).pressed.attack))) { sfx.select(); loadGlobal(); }
   if (input.key('KeyL') || local.some((id) => backPressed(id))) setState('title');
 }
 
@@ -505,6 +543,7 @@ function guestMessage(m) {
     const entered = state !== m.st && m.st;
     state = m.st;
     if (entered === 'title') announceRuns(stats.endRuns()); // the host's game is over
+    if (entered === 'gameover' || entered === 'ending') offerPending = true;
     net.ui = ui;
     slots = ui.slots;
     countdown = ui.cd;
@@ -731,7 +770,7 @@ function shopBuy(p, c) {
 }
 
 function updateGameOver() {
-  if (stateT < 1.5) return;
+  if (stateT < 1.5 || promptHeld) return;
   if (input.firstPressed('attack')) {
     // Continue: everyone revives and the level restarts, without the points scored on it.
     for (const p of game.allPlayers()) {
@@ -746,7 +785,7 @@ function updateGameOver() {
 }
 
 function updateEnding() {
-  if (stateT > 3 && (input.firstPressed('attack') || input.anyStart())) { persist(); game = null; setState('title'); }
+  if (!promptHeld && stateT > 3 && (input.firstPressed('attack') || input.anyStart())) { persist(); game = null; setState('title'); }
 }
 
 // Background music for whatever is on screen (the track table is in music-data.js).
@@ -781,7 +820,7 @@ function render() {
     if (state === 'confirm') drawOverlay(ctx, 'NEW QUEST?', ['Your saved heroes and Rune Stones will be lost.', '', `${btn('attack')}: start over        ${btn('back')}: keep my quest`], '#ffb060');
   } else if (state === 'stats') {
     r3d.renderShowcase(titleShowcase(stateT), stateT);
-    drawRecords(ctx, stateT, stats.data, save.progress, save.heroes, unlockedClasses(save.progress), recordsTab, (r) => stats.isRecent(r));
+    drawRecords(ctx, stateT, stats.data, save.progress, save.heroes, unlockedClasses(save.progress), recordsTab, (r) => stats.isRecent(r), globalBoard, isMineRow);
   } else if (state === 'story') {
     r3d.renderShowcase(storyShowcase(stateT, game), stateT);
     drawStory(ctx, story, stateT);
@@ -852,6 +891,7 @@ function render() {
   }
 }
 
+let promptHeld = false; // the score prompt is open this frame
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -888,6 +928,14 @@ function frame(now) {
     return;
   }
 
+  // the score prompt, when a run ends: it takes the input (A / B on a gamepad) until closed
+  if (state !== 'gameover' && state !== 'ending') { offerPending = false; if (lbPrompt.isOpen) lbPrompt.close(); }
+  else if (offerPending && stateT > 1) maybeOffer();
+  promptHeld = lbPrompt.isOpen;
+  if (promptHeld) {
+    if (input.firstPressed('attack')) lbPrompt.submit();
+    else if (anyBack()) lbPrompt.skip();
+  }
   switch (state) {
     case 'title': updateTitle(); break;
     case 'stats': updateRecords(); break;
@@ -930,7 +978,7 @@ function loop(now) {
 }
 
 // Debug/test hook (used by automated smoke tests).
-window.__gl = { get music() { return currentMusic(); }, get intensity() { return musicIntensity(); }, get net() { return net; }, get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; } };
+window.__gl = { get music() { return currentMusic(); }, get intensity() { return musicIntensity(); }, get net() { return net; }, get game() { return game; }, get state() { return state; }, get slots() { return slots; }, get tutorial() { return tutorial; }, get r3d() { return r3d; }, get globalBoard() { return globalBoard; } };
 
 // Scale canvas to fit window while keeping aspect ratio.
 function fit() {

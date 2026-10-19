@@ -951,17 +951,21 @@ function drawRecordsButton(ctx) {
   }
 }
 
-const RECORD_TABS = ['OVERVIEW', 'HEROES', 'LEADERBOARD'];
-const TAB_W = 220, TAB_H = 42, TAB_GAP = 12, TAB_Y = 72;
-const TAB_X0 = (VIEW_W - (TAB_W * 3 + TAB_GAP * 2)) / 2;
+const RECORD_TABS = ['OVERVIEW', 'HEROES', 'LEADERBOARD', 'GLOBAL'];
+const TAB_W = 190, TAB_H = 42, TAB_GAP = 10, TAB_Y = 72;
+const TAB_X0 = (VIEW_W - (TAB_W * RECORD_TABS.length + TAB_GAP * (RECORD_TABS.length - 1))) / 2;
+// GLOBAL page only; with touch controls on screen it keeps clear of the buttons down the right side
+const refreshBtn = () => (document.body.classList.contains('touching') ? { x: 686, y: 14, w: 116, h: 40 } : { x: VIEW_W - 14 - 150, y: 14, w: 150, h: 40 });
 const BACK_BTN = { x: 14, y: 14, w: 116, h: 40 };
 
-// What a tap on the stats screen hits: a tab (0-2), 'back', or null.
-export function recordsTapAt(x, y) {
+// What a tap on the stats screen hits: a tab (0-3), 'back', 'refresh' (GLOBAL page), or null.
+export function recordsTapAt(x, y, tab = 0) {
   const b = BACK_BTN;
   if (x >= b.x - 6 && x <= b.x + b.w + 6 && y >= b.y - 6 && y <= b.y + b.h + 6) return 'back';
+  const r = refreshBtn();
+  if (tab === 3 && x >= r.x - 6 && x <= r.x + r.w + 6 && y >= r.y - 6 && y <= r.y + r.h + 6) return 'refresh';
   if (y < TAB_Y - 6 || y > TAB_Y + TAB_H + 6) return null;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < RECORD_TABS.length; i++) {
     const tx = TAB_X0 + i * (TAB_W + TAB_GAP);
     if (x >= tx && x <= tx + TAB_W) return i;
   }
@@ -979,8 +983,9 @@ function stageName(n) {
 }
 
 // The stats screen. data: see stats.js · progress: the quest save · heroes: saved heroes
-// (for their levels) · unlocked: heroes that can be played · tab: 0-2
-export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab, isRecent = () => false) {
+// (for their levels) · unlocked: heroes that can be played · tab: 0-3 · global: the online board
+// ({ status: 'loading' | 'ok' | 'error', rows }) and isMine(row): which of its rows are ours
+export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab, isRecent = () => false, global = null, isMine = () => false) {
   ctx.clearRect(0, 0, VIEW_W, VIEW_H);
   ctx.fillStyle = 'rgba(4,3,2,0.86)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -1008,11 +1013,12 @@ export function drawRecords(ctx, time, data, progress, heroes, unlocked, tab, is
 
   if (tab === 0) drawOverview(ctx, data, progress, unlocked);
   else if (tab === 1) drawHeroTable(ctx, data, heroes, unlocked);
-  else drawLeaderboard(ctx, data, isRecent, time);
+  else if (tab === 2) drawLeaderboard(ctx, data, isRecent, time);
+  else drawGlobalBoard(ctx, time, global, isMine);
 
   ctx.textAlign = 'center';
   ctx.font = `15px ${SANS}`;
-  const help = device === 'touch' ? `Tap a tab to switch pages · ${btn('back')} or ◀ BACK: return` : `Left/Right: switch pages   ${btn('back')}: back`;
+  const help = device === 'touch' ? `Tap a tab to switch pages · ${btn('back')} or ◀ BACK: return` : `Left/Right: switch pages${tab === 3 ? `   ${btn('attack')} / R: refresh` : ''}   ${btn('back')}: back`;
   outlined(ctx, help, VIEW_W / 2, 628, '#b8a888', '#000', 3);
 }
 
@@ -1124,6 +1130,63 @@ function drawLeaderboard(ctx, d, isRecent = () => false, time = 0) {
     outlined(ctx, r.mode === 'solo' ? 'Solo' : `${r.mode === 'online' ? 'Online' : 'Co-op'} ${r.players}P`, X(690), ty, r.mode === 'online' ? '#8fe0ff' : '#f0e6d0', '#000', 3);
     ctx.textAlign = 'right';
     if (recent) { ctx.font = `bold 19px ${SANS}`; outlined(ctx, 'NEW', X(900), ty, '#ffd860', '#000', 3); }
+    else outlined(ctx, r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—', X(900), ty, '#c8b890', '#000', 3);
+  });
+}
+
+// The online leaderboard: the world's best runs (one per player name), with the ones from
+// this browser highlighted. global.status says what to show while it loads or can't be reached.
+function drawGlobalBoard(ctx, time, g, isMine) {
+  const X = tableX();
+  // REFRESH button, top right
+  const r = refreshBtn();
+  roundRect(ctx, r.x, r.y, r.w, r.h, 10);
+  ctx.fillStyle = 'rgba(40,26,10,0.9)'; ctx.fill();
+  ctx.strokeStyle = '#a07a30'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1;
+  ctx.textAlign = 'center';
+  ctx.font = `bold 18px ${SANS}`;
+  outlined(ctx, g && g.status === 'loading' ? 'LOADING…' : '↻ REFRESH', r.x + r.w / 2, r.y + 26, '#f0e6d0', '#000', 3);
+  const cols = [['#', 64, 'center'], ['PLAYER', 100, 'left'], ['HERO', 330, 'left'], ['SCORE', 560, 'right'], ['REACHED', 600, 'left'], ['DATE', 900, 'right']].map(([n, x, a]) => [n, X(x), a]);
+  ctx.font = `bold 15px ${SANS}`;
+  for (const [name, x, align] of cols) { ctx.textAlign = align; outlined(ctx, name, x, 150, '#a89870', '#000', 3); }
+  const msg = (text, color = '#c8b890') => {
+    ctx.textAlign = 'center'; ctx.font = `italic 22px ${SERIF}`;
+    outlined(ctx, text, VIEW_W / 2, 320, color, '#000', 3);
+  };
+  const rows = g && g.status === 'ok' ? g.rows.slice(0, 10) : [];
+  if (!g || (g.status === 'loading' && !rows.length)) { msg('Loading the worldwide top 10…'); return; }
+  if (g.status === 'error') { msg('Can\'t reach the global leaderboard right now.', '#ffb080'); ctx.font = `17px ${SANS}`; outlined(ctx, 'Your local leaderboard still works. Check your connection and try REFRESH.', VIEW_W / 2, 358, '#c8b890', '#000', 3); return; }
+  if (!rows.length) { msg('No scores yet. Be the first on the board!'); return; }
+  ctx.textAlign = 'center';
+  ctx.font = `italic 14px ${SANS}`;
+  outlined(ctx, 'Worldwide best runs, one per player · at the end of a run you can submit yours', VIEW_W / 2, 607, '#a89870', '#000', 3);
+  const medal = ['#ffd84a', '#d8dce8', '#e09a5a'];
+  rows.forEach((r, i) => {
+    const y = 162 + i * 43, ty = y + 27, mine = isMine(r);
+    ctx.fillStyle = i % 2 ? 'rgba(40,30,16,0.55)' : 'rgba(20,15,8,0.55)';
+    ctx.fillRect(40, y, X.w, 39);
+    if (mine) {
+      ctx.strokeStyle = `rgba(255,216,96,${0.6 + Math.sin(time * 4) * 0.3})`; ctx.lineWidth = 2;
+      ctx.strokeRect(41, y + 1, X.w - 2, 37); ctx.lineWidth = 1;
+    }
+    const cls = CLASSES[r.cls];
+    ctx.textAlign = 'center';
+    ctx.font = `bold 21px ${SANS}`;
+    outlined(ctx, String(i + 1), X(64), ty, medal[i] || '#c8b890', '#000', 3);
+    ctx.textAlign = 'left';
+    ctx.font = `bold 21px ${SANS}`;
+    outlined(ctx, r.name, X(100), ty, mine ? '#ffe070' : '#f0e6d0', '#000', 3);
+    ctx.font = `italic bold 20px ${SERIF}`;
+    outlined(ctx, cls ? cls.name.toUpperCase() : '—', X(330), ty, cls ? cls.color : '#c8b890', '#000', 4);
+    ctx.textAlign = 'right';
+    ctx.font = `bold 21px ${SANS}`;
+    outlined(ctx, fmt(r.score), X(560), ty, '#ffe070', '#000', 3);
+    ctx.textAlign = 'left';
+    ctx.font = `19px ${SANS}`;
+    if (r.won) outlined(ctx, '★ Quest complete', X(600), ty, '#ffd84a', '#000', 3);
+    else outlined(ctx, stageName(r.level), X(600), ty, '#f0e6d0', '#000', 3);
+    ctx.textAlign = 'right';
+    if (mine) { ctx.font = `bold 19px ${SANS}`; outlined(ctx, 'YOU', X(900), ty, '#ffd860', '#000', 3); }
     else outlined(ctx, r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—', X(900), ty, '#c8b890', '#000', 3);
   });
 }
