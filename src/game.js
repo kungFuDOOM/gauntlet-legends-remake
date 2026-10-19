@@ -487,7 +487,7 @@ export class Game {
       p.dash.t -= dt;
       mx = p.dash.vx; my = p.dash.vy; speed = 520;
       for (const e of this.enemies) {
-        if (!p.dash.hit.has(e) && dist(p, e) < p.r + e.r + 8) { p.dash.hit.add(e); this.damageEnemy(e, p.strength * 1.6, p, true); }
+        if (!p.dash.hit.has(e) && dist(p, e) < p.r + e.r + 8) { p.dash.hit.add(e); this.damageEnemy(e, p.strength * 1.6, p, true, !!p.dash.turbo); }
       }
       if (p.dash.t <= 0) p.dash = null;
     } else if (inp.attack && p.shotCd > -0.05) {
@@ -651,13 +651,14 @@ export class Game {
     sfx.shoot(p.def.shot);
   }
 
-  fire(p, angle, { dmg = p.shotDmg, pierce = 0, speed = p.def.shotSpeed, kind = p.def.shot, life = 1.6 } = {}) {
+  fire(p, angle, { dmg = p.shotDmg, pierce = 0, speed = p.def.shotSpeed, kind = p.def.shot, life = 1.6, turbo = false } = {}) {
     const sup = !!p.buffs.super;
     this.projs.push({
       owner: 'player', p, kind, x: p.x + Math.cos(angle) * 10, y: p.y + Math.sin(angle) * 10,
       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: (kind === 'fireball' ? 7 : 5) * (sup ? 2 : 1),
       dmg: dmg * (sup ? 1.7 : 1) * (p.buffs.grow ? 1.4 : 1), pierce: pierce + (sup ? 3 : 0), life, hits: new Set(), spin: 0,
       super: sup, bounces: p.buffs.reflect ? 3 : 0,
+      turbo, // dealt by a Turbo attack: never refills the Turbo meter, even if it lands after the move ends
     });
   }
 
@@ -720,30 +721,30 @@ export class Game {
         this.burst(p.x, p.y, '#f2c14e', 30, 220);
         for (const e of this.enemies) {
           if (dist(p, e) < 90 + e.r) {
-            this.damageEnemy(e, p.strength * 2.2, p, true);
+            this.damageEnemy(e, p.strength * 2.2, p, true, true);
             const d = dist(p, e) || 1;
             this.move(e, (e.x - p.x) / d * 30, (e.y - p.y) / d * 30);
           }
         }
-        for (const g of this.gens) if (dist(p, g) < 90 + g.r) this.damageGen(g, p.strength * 1.2, p);
+        for (const g of this.gens) if (dist(p, g) < 90 + g.r) this.damageGen(g, p.strength * 1.2, p, true);
         break;
       case 'dash':
-        p.dash = { t: 0.32, vx: p.fx, vy: p.fy, hit: new Set() };
+        p.dash = { t: 0.32, vx: p.fx, vy: p.fy, hit: new Set(), turbo: true };
         this.burst(p.x, p.y, '#bcd4ff', 20, 160);
         break;
       case 'nova':
-        for (let i = 0; i < 16; i++) this.fire(p, (i / 16) * Math.PI * 2, { dmg: p.shotDmg * 1.6, pierce: 1, kind: 'fireball' });
+        for (let i = 0; i < 16; i++) this.fire(p, (i / 16) * Math.PI * 2, { dmg: p.shotDmg * 1.6, pierce: 1, kind: 'fireball', turbo: true });
         this.burst(p.x, p.y, '#ff8a3a', 30, 200);
         break;
       case 'volley': {
         const base = Math.atan2(p.fy, p.fx);
-        for (let i = -4; i <= 4; i++) this.fire(p, base + i * 0.1, { dmg: p.shotDmg * 1.5, pierce: 3, speed: 650 });
+        for (let i = -4; i <= 4; i++) this.fire(p, base + i * 0.1, { dmg: p.shotDmg * 1.5, pierce: 3, speed: 650, turbo: true });
         break;
       }
     }
   }
 
-  usePotion(p, power = 1, fromShot = false) {
+  usePotion(p, power = 1, fromShot = false, fromTurbo = false) {
     if (!fromShot) {
       if (p.potions <= 0) return;
       p.potions--;
@@ -760,27 +761,28 @@ export class Game {
       if (e.type === 'boss') {
         // guardians resist magic: a slice of their health at most, then a ward against more
         if (e.ward > 0 || e.air || e.roar > 0) { this.text(e.x, e.y - 50, 'RESISTED', '#c9a0ff', 1); continue; }
-        this.damageEnemy(e, Math.min(dmg * 1.5, e.maxHp * BOSS_HP_MAGIC_CAP), p, false);
+        this.damageEnemy(e, Math.min(dmg * 1.5, e.maxHp * BOSS_HP_MAGIC_CAP), p, false, fromTurbo);
         e.ward = BOSS_WARD;
         this.text(e.x, e.y - 70, 'WARDED AGAINST MAGIC', '#c9a0ff', 1.6);
         continue;
       }
-      this.damageEnemy(e, dmg, p, false);
+      this.damageEnemy(e, dmg, p, false, fromTurbo);
     }
-    for (const g of this.gens) if (this.onScreen(g, 20)) this.damageGen(g, 16 * p.magic * power, p);
+    for (const g of this.gens) if (this.onScreen(g, 20)) this.damageGen(g, 16 * p.magic * power, p, fromTurbo);
     if (!fromShot) this.text(p.x, p.y - 26, 'MAGIC!', '#c9a0ff', 1.2);
   }
 
   // ---------- damage ----------
 
-  damageEnemy(e, amount, p, melee) {
+  // `fromTurbo`: the hit was dealt by a Turbo attack (spin, dash, nova, volley), so it must not refill the Turbo meter.
+  damageEnemy(e, amount, p, melee, fromTurbo = false) {
     if (e.hp <= 0) return;
     if (e.def.immune) { if (melee) this.text(e.x, e.y - 16, 'IMMUNE', '#999', 0.6); return; }
     if (e.type === 'boss') { amount = bossDamage(this, e, amount); if (!amount) return; }
     amount = Math.round(amount);
     e.hp -= amount;
     e.hurt = 0.12;
-    if (p) p.turbo = Math.min(100, p.turbo + amount * 0.45);
+    if (p && !fromTurbo) p.turbo = Math.min(100, p.turbo + amount * 0.45);
     sfx.hit();
     this.burst(e.x, e.y, e.def.fly ? e.def.color : '#b02020', 4, 80);
     if (e.type === 'boss') this.shake = Math.max(this.shake, 2);
@@ -815,11 +817,11 @@ export class Game {
     this.gens.forEach((g) => { g.hp = 0; this.burst(g.x, g.y, '#888', 15, 140); });
   }
 
-  damageGen(g, amount, p) {
+  damageGen(g, amount, p, fromTurbo = false) {
     if (g.hp <= 0) return;
     g.hp -= amount;
     g.hurt = 0.12;
-    if (p) p.turbo = Math.min(100, p.turbo + amount * 0.3);
+    if (p && !fromTurbo) p.turbo = Math.min(100, p.turbo + amount * 0.3);
     sfx.hit();
     this.burst(g.x, g.y, '#9a8a6a', 5, 90);
     if (g.hp <= 0) {
@@ -1091,13 +1093,13 @@ export class Game {
       if (e.hp <= 0 || e.invisible || pr.hits.has(e)) continue;
       if (dist(e, pr) < e.r + pr.r) {
         if (e.def.immune) { pr.dead = true; this.burst(pr.x, pr.y, '#888', 4, 60); return; }
-        this.damageEnemy(e, pr.dmg, pr.p, false);
+        this.damageEnemy(e, pr.dmg, pr.p, false, !!pr.turbo);
         pr.hits.add(e);
         if (pr.pierce-- <= 0) { pr.dead = true; return; }
       }
     }
     for (const g of this.gens) {
-      if (g.hp > 0 && dist(g, pr) < g.r + pr.r) { this.damageGen(g, pr.dmg, pr.p); pr.dead = true; return; }
+      if (g.hp > 0 && dist(g, pr) < g.r + pr.r) { this.damageGen(g, pr.dmg, pr.p, !!pr.turbo); pr.dead = true; return; }
     }
     for (const it of this.items) {
       if (it.dead || dist(it, pr) > it.r + pr.r) continue;
@@ -1111,7 +1113,7 @@ export class Game {
       }
       if (it.type === 'potion') {
         it.dead = true; pr.dead = true;
-        this.usePotion(pr.p, 0.5, true);
+        this.usePotion(pr.p, 0.5, true, !!pr.turbo);
         this.text(it.x, it.y - 14, 'POTION SHATTERED', '#c9a0ff', 1.4);
         return;
       }
