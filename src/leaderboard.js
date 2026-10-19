@@ -57,6 +57,7 @@ export function friendlyError(e) {
   const m = String((e && e.message) || '');
   if (/slow down/.test(m)) return 'SLOW DOWN - TRY AGAIN IN A MOMENT';
   if (/rate limit/.test(m)) return 'TOO MANY SUBMISSIONS - TRY LATER';
+  if (/busy/.test(m)) return 'SERVER BUSY - TRY AGAIN LATER';
   if (e && e.server) return 'SCORE REJECTED';
   return 'OFFLINE - SCORE NOT SAVED';
 }
